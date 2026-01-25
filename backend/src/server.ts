@@ -31,6 +31,7 @@ import resolutionRoutes from './api/routes/resolutions';
 import webhookRoutes from './api/routes/webhooks';
 import analyticsRoutes from './api/routes/analytics';
 import adminRoutes from './api/routes/admin';
+import aiRoutes from './api/routes/ai';
 
 // Initialize logger
 const logger = new Logger('Server');
@@ -279,6 +280,7 @@ app.use('/api/resolutions', resolutionRoutes);
 app.use('/api/webhooks', webhookRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/ai', aiRoutes);
 
 // API documentation
 app.get('/api', (req: Request, res: Response) => {
@@ -353,14 +355,16 @@ io.on('connection', (socket) => {
 
 // Broadcast events to relevant rooms
 eventBus.subscribe('message.received', async (event) => {
-  io.to(`conversation:${event.payload.conversationId}`).emit('conversation:message', {
-    conversationId: event.payload.conversationId,
-    message: event.payload,
+  const payload = event.payload as any;
+  io.to(`conversation:${payload.conversationId}`).emit('conversation:message', {
+    conversationId: payload.conversationId,
+    message: payload,
   });
 });
 
 eventBus.subscribe('conversation.state_changed', async (event) => {
-  io.to(`conversation:${event.payload.conversationId}`).emit('conversation:state_changed', event.payload);
+  const payload = event.payload as any;
+  io.to(`conversation:${payload.conversationId}`).emit('conversation:state_changed', payload);
 });
 
 eventBus.subscribe('resolution.status_changed', async (event) => {

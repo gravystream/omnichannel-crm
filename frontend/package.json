@@ -22,7 +22,8 @@
     "react-hot-toast": "^2.4.1",
     "react-redux": "^9.0.4",
     "react-router-dom": "^6.21.1",
-    "socket.io-client": "^4.7.2"
+    "socket.io-client": "^4.7.2",
+    "terser": "^5.46.0"
   },
   "devDependencies": {
     "@types/node": "^20.10.6",

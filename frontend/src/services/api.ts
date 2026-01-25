@@ -2,7 +2,7 @@ import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 import { store, authActions } from '../store';
 import type { ApiResponse, User, Conversation, Message, Customer, Resolution, AnalyticsMetrics } from '../types';
 
-const API_BASE = import.meta.env.VITE_API_URL || '/api';
+const API_BASE = import.meta.env.VITE_API_URL || '/api/v1';
 
 const api = axios.create({
   baseURL: API_BASE,
@@ -194,6 +194,69 @@ export const analyticsApi = {
 
   getChannelBreakdown: async (params?: { startDate?: string; endDate?: string }) => {
     const { data } = await api.get<ApiResponse<any>>('/analytics/channels', { params });
+    return data;
+  },
+};
+
+// AI API
+export const aiApi = {
+  getConfig: async () => {
+    const { data } = await api.get<ApiResponse<any>>('/ai/config');
+    return data;
+  },
+
+  saveConfig: async (config: { provider?: string; apiKey?: string; model?: string; autoResponse?: boolean; confidenceThreshold?: number; maxTokens?: number; temperature?: number }) => {
+    const { data } = await api.post<ApiResponse<any>>('/ai/config', config);
+    return data;
+  },
+
+  getTrainingData: async () => {
+    const { data } = await api.get<ApiResponse<any[]>>('/ai/training');
+    return data;
+  },
+
+  addTrainingData: async (item: { question: string; answer: string; category?: string; tags?: string[] }) => {
+    const { data } = await api.post<ApiResponse<any>>('/ai/training', item);
+    return data;
+  },
+
+  bulkAddTrainingData: async (items: { question: string; answer: string; category?: string; tags?: string[] }[]) => {
+    const { data } = await api.post<ApiResponse<any>>('/ai/training/bulk', { items });
+    return data;
+  },
+
+  updateTrainingData: async (id: string, item: { question?: string; answer?: string; category?: string; tags?: string[] }) => {
+    const { data } = await api.put<ApiResponse<any>>(`/ai/training/${id}`, item);
+    return data;
+  },
+
+  deleteTrainingData: async (id: string) => {
+    const { data } = await api.delete<ApiResponse<void>>(`/ai/training/${id}`);
+    return data;
+  },
+
+  getTemplates: async () => {
+    const { data } = await api.get<ApiResponse<any[]>>('/ai/templates');
+    return data;
+  },
+
+  addTemplate: async (template: { name: string; content: string; category?: string }) => {
+    const { data } = await api.post<ApiResponse<any>>('/ai/templates', template);
+    return data;
+  },
+
+  updateTemplate: async (id: string, template: { name?: string; content?: string; category?: string }) => {
+    const { data } = await api.put<ApiResponse<any>>(`/ai/templates/${id}`, template);
+    return data;
+  },
+
+  deleteTemplate: async (id: string) => {
+    const { data } = await api.delete<ApiResponse<void>>(`/ai/templates/${id}`);
+    return data;
+  },
+
+  testAI: async (message: string) => {
+    const { data } = await api.post<ApiResponse<{ response: string; provider: string; model: string; knowledgeUsed: number }>>('/ai/test', { message });
     return data;
   },
 };

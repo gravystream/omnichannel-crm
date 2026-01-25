@@ -10,14 +10,16 @@ import {
   TrashIcon,
   CheckCircleIcon,
   XCircleIcon,
+  SparklesIcon,
 } from '@heroicons/react/24/outline';
-import { adminApi } from '../services/api';
+import { adminApi, aiApi } from '../services/api';
 import type { User } from '../types';
 
 const tabs = [
   { id: 'users', name: 'Users', icon: UserGroupIcon },
   { id: 'channels', name: 'Channels', icon: ChatBubbleLeftRightIcon },
   { id: 'email', name: 'Email Integration', icon: EnvelopeIcon },
+  { id: 'ai', name: 'AI Settings', icon: SparklesIcon },
   { id: 'general', name: 'General Settings', icon: Cog6ToothIcon },
   { id: 'security', name: 'Security', icon: ShieldCheckIcon },
 ];
@@ -76,9 +78,24 @@ export const AdminPage: React.FC = () => {
     ssl: true,
     connected: false,
   });
+  const [aiSettings, setAiSettings] = useState({
+    provider: 'anthropic',
+    apiKey: '',
+    model: 'claude-3-sonnet-20240229',
+    autoResponse: false,
+    confidenceThreshold: 0.7,
+    maxTokens: 1000,
+    temperature: 0.7,
+  });
+  const [aiTrainingData, setAiTrainingData] = useState<any[]>([]);
+  const [aiTestMessage, setAiTestMessage] = useState('');
+  const [aiTestResponse, setAiTestResponse] = useState('');
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiSaveStatus, setAiSaveStatus] = useState('');
 
   useEffect(() => {
     fetchUsers();
+    fetchAiConfig();
   }, []);
 
   const fetchUsers = async () => {
@@ -89,6 +106,63 @@ export const AdminPage: React.FC = () => {
       }
     } catch (error) {
       // Use mock data
+    }
+  };
+
+  const fetchAiConfig = async () => {
+    try {
+      const [configResponse, trainingResponse] = await Promise.all([
+        aiApi.getConfig(),
+        aiApi.getTrainingData()
+      ]);
+      if (configResponse.success && configResponse.data) {
+        setAiSettings(prev => ({
+          ...prev,
+          ...configResponse.data,
+          apiKey: configResponse.data.apiKey ? '••••••••••••••••' : ''
+        }));
+      }
+      if (trainingResponse.success && trainingResponse.data) {
+        setAiTrainingData(trainingResponse.data);
+      }
+    } catch (error) {
+      console.error('Failed to fetch AI config:', error);
+    }
+  };
+
+  const handleSaveAiConfig = async () => {
+    setAiLoading(true);
+    setAiSaveStatus('');
+    try {
+      const configToSave = {
+        ...aiSettings,
+        apiKey: aiSettings.apiKey.includes('•') ? undefined : aiSettings.apiKey
+      };
+      const response = await aiApi.saveConfig(configToSave);
+      if (response.success) {
+        setAiSaveStatus('Configuration saved successfully!');
+        setTimeout(() => setAiSaveStatus(''), 3000);
+      }
+    } catch (error) {
+      setAiSaveStatus('Failed to save configuration');
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
+  const handleTestAi = async () => {
+    if (!aiTestMessage.trim()) return;
+    setAiLoading(true);
+    setAiTestResponse('');
+    try {
+      const response = await aiApi.testAI(aiTestMessage);
+      if (response.success && response.data) {
+        setAiTestResponse(response.data.response);
+      }
+    } catch (error: any) {
+      setAiTestResponse(`Error: ${error.response?.data?.error?.message || 'Failed to test AI'}`);
+    } finally {
+      setAiLoading(false);
     }
   };
 
@@ -386,6 +460,182 @@ export const AdminPage: React.FC = () => {
                       </button>
                     </div>
                   </div>
+                </div>
+              </div>
+            )}
+
+            {/* AI Settings Tab */}
+            {activeTab === 'ai' && (
+              <div className="space-y-6">
+                <h2 className="text-lg font-semibold text-gray-900">AI Configuration</h2>
+
+                {aiSaveStatus && (
+                  <div className={`p-3 rounded-lg ${aiSaveStatus.includes('success') ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+                    {aiSaveStatus}
+                  </div>
+                )}
+
+                <div className="p-4 border border-gray-200 rounded-lg space-y-4">
+                  <h3 className="font-medium text-gray-900">Provider Settings</h3>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">AI Provider</label>
+                      <select
+                        value={aiSettings.provider}
+                        onChange={(e) => setAiSettings({ ...aiSettings, provider: e.target.value })}
+                        className="w-full border border-gray-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-primary-500"
+                      >
+                        <option value="anthropic">Anthropic (Claude)</option>
+                        <option value="openai">OpenAI (GPT)</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Model</label>
+                      <select
+                        value={aiSettings.model}
+                        onChange={(e) => setAiSettings({ ...aiSettings, model: e.target.value })}
+                        className="w-full border border-gray-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-primary-500"
+                      >
+                        {aiSettings.provider === 'anthropic' ? (
+                          <>
+                            <option value="claude-3-sonnet-20240229">Claude 3 Sonnet</option>
+                            <option value="claude-3-opus-20240229">Claude 3 Opus</option>
+                            <option value="claude-3-haiku-20240307">Claude 3 Haiku</option>
+                          </>
+                        ) : (
+                          <>
+                            <option value="gpt-4">GPT-4</option>
+                            <option value="gpt-4-turbo">GPT-4 Turbo</option>
+                            <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
+                          </>
+                        )}
+                      </select>
+                    </div>
+                    <div className="col-span-2">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">API Key</label>
+                      <input
+                        type="password"
+                        value={aiSettings.apiKey}
+                        onChange={(e) => setAiSettings({ ...aiSettings, apiKey: e.target.value })}
+                        className="w-full border border-gray-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-primary-500"
+                        placeholder="Enter your API key"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="p-4 border border-gray-200 rounded-lg space-y-4">
+                  <h3 className="font-medium text-gray-900">Response Settings</h3>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Max Tokens</label>
+                      <input
+                        type="number"
+                        value={aiSettings.maxTokens}
+                        onChange={(e) => setAiSettings({ ...aiSettings, maxTokens: parseInt(e.target.value) })}
+                        className="w-full border border-gray-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-primary-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Temperature</label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        max="1"
+                        value={aiSettings.temperature}
+                        onChange={(e) => setAiSettings({ ...aiSettings, temperature: parseFloat(e.target.value) })}
+                        className="w-full border border-gray-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-primary-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Confidence Threshold</label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        max="1"
+                        value={aiSettings.confidenceThreshold}
+                        onChange={(e) => setAiSettings({ ...aiSettings, confidenceThreshold: parseFloat(e.target.value) })}
+                        className="w-full border border-gray-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-primary-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-4 p-4 bg-gray-50 rounded-lg">
+                    <div className="flex-1">
+                      <p className="font-medium text-gray-900">Auto-respond to customers</p>
+                      <p className="text-sm text-gray-500">AI will automatically respond to customer messages</p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={aiSettings.autoResponse}
+                        onChange={(e) => setAiSettings({ ...aiSettings, autoResponse: e.target.checked })}
+                        className="sr-only peer"
+                      />
+                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-600"></div>
+                    </label>
+                  </div>
+                </div>
+
+                <div className="flex justify-end">
+                  <button
+                    onClick={handleSaveAiConfig}
+                    disabled={aiLoading}
+                    className="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50"
+                  >
+                    {aiLoading ? 'Saving...' : 'Save AI Configuration'}
+                  </button>
+                </div>
+
+                {/* Training Data Section */}
+                <div className="p-4 border border-gray-200 rounded-lg space-y-4">
+                  <h3 className="font-medium text-gray-900">Knowledge Base ({aiTrainingData.length} items)</h3>
+                  <p className="text-sm text-gray-500">Training data helps the AI provide better responses</p>
+
+                  {aiTrainingData.length > 0 && (
+                    <div className="max-h-48 overflow-y-auto space-y-2">
+                      {aiTrainingData.map((item) => (
+                        <div key={item.id} className="p-2 bg-gray-50 rounded text-sm">
+                          <p className="font-medium text-gray-900">{item.question}</p>
+                          <p className="text-gray-600 truncate">{item.answer}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Test AI Section */}
+                <div className="p-4 border border-gray-200 rounded-lg space-y-4">
+                  <h3 className="font-medium text-gray-900">Test AI Response</h3>
+
+                  <div>
+                    <input
+                      type="text"
+                      value={aiTestMessage}
+                      onChange={(e) => setAiTestMessage(e.target.value)}
+                      placeholder="Enter a test message..."
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-primary-500"
+                    />
+                  </div>
+
+                  <button
+                    onClick={handleTestAi}
+                    disabled={aiLoading || !aiTestMessage.trim()}
+                    className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50"
+                  >
+                    {aiLoading ? 'Testing...' : 'Test AI'}
+                  </button>
+
+                  {aiTestResponse && (
+                    <div className="p-3 bg-gray-50 rounded-lg">
+                      <p className="text-sm font-medium text-gray-700 mb-1">AI Response:</p>
+                      <p className="text-gray-900">{aiTestResponse}</p>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
