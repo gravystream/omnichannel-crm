@@ -31,7 +31,7 @@ const SettingsPage: React.FC = () => {
   const loadGuide = async (id: string) => {
     setShowGuide(id);
     try {
-      const r = await api.get('/api/v1/integrations/' + id + '/guide');
+      const r = await api.get('/integrations/' + id + '/guide');
       setGuide(r.data?.data || null);
     } catch { setGuide(null); }
   };

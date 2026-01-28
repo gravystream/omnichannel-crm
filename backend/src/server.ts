@@ -33,6 +33,7 @@ import webhookRoutes from './api/routes/webhooks';
 import analyticsRoutes from './api/routes/analytics';
 import adminRoutes from './api/routes/admin';
 import aiRoutes from './api/routes/ai';
+import integrationsRoutes from './api/routes/integrations';
 
 // Initialize logger
 const logger = new Logger('Server');
@@ -279,6 +280,7 @@ app.use('/api/v1/conversations', conversationRoutes);
 app.use('/api/v1/customers', customerRoutes);
 app.use('/api/v1/resolutions', resolutionRoutes);
 app.use('/api/v1/webhooks', webhookRoutes);
+app.use('/api/v1/integrations', integrationsRoutes);
 app.use('/api/v1/analytics', analyticsRoutes);
 app.use('/api/v1/admin', adminRoutes);
 app.use('/api/v1/ai', aiRoutes);
