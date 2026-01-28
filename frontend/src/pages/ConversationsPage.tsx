@@ -33,6 +33,10 @@ const priorityColors: Record<string, string> = {
   low: 'bg-gray-100 text-gray-800',
 };
 
+// Default fallback for unknown statuses or priorities
+const defaultStatusColor = 'bg-gray-100 text-gray-800';
+const defaultPriorityColor = 'bg-gray-100 text-gray-800';
+
 export const ConversationsPage: React.FC = () => {
   const navigate = useNavigate();
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -77,7 +81,7 @@ export const ConversationsPage: React.FC = () => {
         const search = filters.search.toLowerCase();
         return (
           conv.subject?.toLowerCase().includes(search) ||
-          conv.tags.some(t => t.toLowerCase().includes(search))
+          (conv.tags || []).some(t => t.toLowerCase().includes(search))
         );
       }
       return true;
@@ -227,7 +231,7 @@ export const ConversationsPage: React.FC = () => {
                       <div>
                         <p className="font-medium text-gray-900">{conv.subject || 'No subject'}</p>
                         <div className="flex gap-1 mt-1">
-                          {conv.tags.slice(0, 3).map((tag) => (
+                          {conv.tags?.slice(0, 3).map((tag) => (
                             <span key={tag} className="px-1.5 py-0.5 text-xs bg-gray-100 text-gray-600 rounded">
                               {tag}
                             </span>
@@ -242,12 +246,12 @@ export const ConversationsPage: React.FC = () => {
                       </span>
                     </td>
                     <td className="px-4 py-3">
-                      <span className={`px-2 py-1 text-xs font-medium rounded-full ${statusColors[conv.status]}`}>
+                      <span className={`px-2 py-1 text-xs font-medium rounded-full ${statusColors[conv.status] || defaultStatusColor}`}>
                         {conv.status}
                       </span>
                     </td>
                     <td className="px-4 py-3">
-                      <span className={`px-2 py-1 text-xs font-medium rounded-full ${priorityColors[conv.priority]}`}>
+                      <span className={`px-2 py-1 text-xs font-medium rounded-full ${priorityColors[conv.priority] || defaultPriorityColor}`}>
                         {conv.priority}
                       </span>
                     </td>
@@ -255,7 +259,7 @@ export const ConversationsPage: React.FC = () => {
                       {conv.assignedAgent?.name || conv.assignedTo || 'Unassigned'}
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-500">
-                      {new Date(conv.lastMessageAt).toLocaleString()}
+                      {conv.lastMessageAt || conv.updatedAt ? new Date(conv.lastMessageAt || conv.updatedAt).toLocaleString() : 'N/A'}
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1">

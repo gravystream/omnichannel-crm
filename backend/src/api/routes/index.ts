@@ -11,6 +11,7 @@ import analyticsRoutes from './analytics';
 import webhooksRoutes from './webhooks';
 import adminRoutes from './admin';
 import aiRoutes from './ai';
+import integrationsRoutes from './integrations';
 
 const router = Router();
 
@@ -23,5 +24,6 @@ router.use('/analytics', analyticsRoutes);
 router.use('/webhooks', webhooksRoutes);
 router.use('/admin', adminRoutes);
 router.use('/ai', aiRoutes);
+router.use('/integrations', integrationsRoutes);
 
 export default router;

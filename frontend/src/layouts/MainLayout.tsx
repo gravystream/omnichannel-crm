@@ -14,6 +14,7 @@ import {
   ShieldCheckIcon,
   BellIcon,
   ArrowRightOnRectangleIcon,
+  CpuChipIcon,
 } from '@heroicons/react/24/outline';
 import { useAuth } from '../hooks/useAuth';
 import { useAppSelector, useAppDispatch, uiActions } from '../store';
@@ -26,6 +27,7 @@ const navigation = [
   { name: 'Resolutions', href: '/resolutions', icon: ClipboardDocumentListIcon },
   { name: 'Customers', href: '/customers', icon: UserGroupIcon },
   { name: 'Knowledge Base', href: '/knowledge', icon: BookOpenIcon },
+  { name: 'AI Agent', href: '/ai-agent', icon: CpuChipIcon },
   { name: 'Analytics', href: '/analytics', icon: ChartBarIcon },
 ];
 

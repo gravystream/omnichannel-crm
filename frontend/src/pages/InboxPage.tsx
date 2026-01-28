@@ -39,6 +39,10 @@ const statusBadges: Record<string, { color: string; label: string }> = {
   closed: { color: 'bg-gray-100 text-gray-800', label: 'Closed' },
 };
 
+// Default fallback for unknown statuses or priorities
+const defaultStatusBadge = { color: 'bg-gray-100 text-gray-800', label: 'Unknown' };
+const defaultPriorityColor = 'border-l-gray-400';
+
 export const InboxPage: React.FC = () => {
   const navigate = useNavigate();
   const { conversationId } = useParams<{ conversationId?: string }>();
@@ -212,7 +216,7 @@ export const InboxPage: React.FC = () => {
                 key={conv.id}
                 onClick={() => selectConversation(conv)}
                 className={`p-4 border-b border-gray-100 cursor-pointer hover:bg-gray-50 transition-colors border-l-4 ${
-                  priorityColors[conv.priority]
+                  priorityColors[conv.priority] || defaultPriorityColor
                 } ${selectedConv?.id === conv.id ? 'bg-primary-50' : ''}`}
               >
                 <div className="flex items-start justify-between">
@@ -228,8 +232,8 @@ export const InboxPage: React.FC = () => {
                     </p>
                   </div>
                   <div className="text-right ml-2">
-                    <span className={`px-2 py-0.5 text-xs rounded-full ${statusBadges[conv.status].color}`}>
-                      {statusBadges[conv.status].label}
+                    <span className={`px-2 py-0.5 text-xs rounded-full ${(statusBadges[conv.status] || defaultStatusBadge).color}`}>
+                      {(statusBadges[conv.status] || defaultStatusBadge).label}
                     </span>
                     <p className="text-xs text-gray-400 mt-1">
                       {new Date(conv.lastMessageAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -237,7 +241,7 @@ export const InboxPage: React.FC = () => {
                   </div>
                 </div>
                 <div className="flex items-center gap-1 mt-2">
-                  {conv.tags.slice(0, 3).map(tag => (
+                  {conv.tags?.slice(0, 3).map(tag => (
                     <span key={tag} className="px-1.5 py-0.5 text-xs bg-gray-100 text-gray-600 rounded">
                       {tag}
                     </span>

@@ -206,7 +206,7 @@ export const KnowledgeBasePage: React.FC = () => {
                             <h3 className="font-medium text-gray-900 hover:text-primary-600 cursor-pointer">
                               {article.title}
                             </h3>
-                            <span className={`px-2 py-0.5 text-xs rounded-full ${statusColors[article.status]}`}>
+                            <span className={`px-2 py-0.5 text-xs rounded-full ${(statusColors[article.status] || "bg-gray-100 text-gray-800")}`}>
                               {article.status}
                             </span>
                           </div>

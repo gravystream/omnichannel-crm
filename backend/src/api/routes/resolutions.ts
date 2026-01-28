@@ -1,398 +1,179 @@
-/**
- * Resolution Routes
- */
-
 import { Router, Request, Response } from 'express';
-import { v4 as uuidv4 } from 'uuid';
+import { resolutionRepository } from '../../repositories/ResolutionRepository';
+import { swarmRepository } from '../../repositories/SwarmRepository';
+import { getSlackService } from '../../services/SlackService';
 
 const router = Router();
 
-// In-memory storage for demo
-const resolutions = new Map<string, any>();
-const updates = new Map<string, any[]>();
-
-// Initialize sample resolutions
-function initSampleResolutions() {
-  const res1 = {
-    id: 'res_sample_1',
-    conversationId: 'conv_sample_3',
-    customerId: 'cust_3',
-    title: 'Payment Processing Failure - $10,000 Transaction',
-    description: 'Enterprise customer Bob Wilson experienced a stuck transaction during supplier payment. Transaction ID: TXN-2024011500123. Amount: $10,000 USD.',
-    issueType: 'transaction_system_failure',
-    priority: 'P0',
-    status: 'fix_in_progress',
-    assignedTeamId: 'team_engineering',
-    assignedEngineerId: 'user_eng1',
-    slackChannelId: 'C12345INCIDENT',
-    slackChannelName: 'incident-txn-stuck-payment',
-    rootCause: 'Database connection pool exhaustion during peak load caused transaction to hang in pending state',
-    affectedSystems: ['payment-gateway', 'transaction-processor', 'database'],
-    timeline: [
-      {
-        timestamp: new Date(Date.now() - 45 * 60 * 1000).toISOString(),
-        event: 'Issue reported via WhatsApp'
+router.get('/', async (req: Request, res: Response) => {
+  try {
+    const { status, priority, owningTeam, ownerId, page = '1', pageSize = '20' } = req.query;
+    const result = await resolutionRepository.find({
+      status: status as string,
+      priority: priority as string,
+      owningTeam: owningTeam as string,
+      ownerId: ownerId as string,
+      page: parseInt(page as string, 10),
+      pageSize: parseInt(pageSize as string, 10),
+    });
+    res.json({
+      success: true,
+      data: result.data,
+      pagination: {
+        page: parseInt(page as string, 10),
+        pageSize: parseInt(pageSize as string, 10),
+        totalItems: result.total,
+        totalPages: Math.ceil(result.total / parseInt(pageSize as string, 10)),
       },
-      {
-        timestamp: new Date(Date.now() - 40 * 60 * 1000).toISOString(),
-        event: 'Escalated to engineering'
-      },
-      {
-        timestamp: new Date(Date.now() - 35 * 60 * 1000).toISOString(),
-        event: 'Slack swarm channel created'
-      },
-      {
-        timestamp: new Date(Date.now() - 30 * 60 * 1000).toISOString(),
-        event: 'Root cause identified: connection pool exhaustion'
-      },
-      {
-        timestamp: new Date(Date.now() - 20 * 60 * 1000).toISOString(),
-        event: 'Fix deployed to staging'
-      }
-    ],
-    customerLastUpdatedAt: new Date(Date.now() - 20 * 60 * 1000).toISOString(),
-    nextUpdateDueAt: new Date(Date.now() + 40 * 60 * 1000).toISOString(),
-    estimatedResolutionAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
-    createdAt: new Date(Date.now() - 45 * 60 * 1000).toISOString(),
-    updatedAt: new Date().toISOString()
-  };
+    });
+  } catch (error: any) {
+    console.error('[Resolutions] Error fetching:', error);
+    res.status(500).json({ success: false, error: { code: 'FETCH_ERROR', message: error.message } });
+  }
+});
 
-  resolutions.set(res1.id, res1);
-
-  // Sample updates for resolution
-  updates.set('res_sample_1', [
-    {
-      id: 'update_1',
-      resolutionId: 'res_sample_1',
-      type: 'status_change',
-      previousStatus: 'investigating',
-      newStatus: 'fix_in_progress',
-      content: 'Root cause identified. Engineering team is deploying a fix to increase connection pool size.',
-      isCustomerFacing: true,
-      sentToCustomer: true,
-      sentToCustomerAt: new Date(Date.now() - 20 * 60 * 1000).toISOString(),
-      authorId: 'user_eng1',
-      authorName: 'Engineering Team',
-      createdAt: new Date(Date.now() - 20 * 60 * 1000).toISOString()
-    },
-    {
-      id: 'update_2',
-      resolutionId: 'res_sample_1',
-      type: 'internal_note',
-      content: 'Connection pool increased from 50 to 200. Monitoring for 30 minutes before releasing stuck transaction.',
-      isCustomerFacing: false,
-      authorId: 'user_eng1',
-      authorName: 'Mike Engineer',
-      createdAt: new Date(Date.now() - 15 * 60 * 1000).toISOString()
+router.get('/:id', async (req: Request, res: Response) => {
+  try {
+    const resolution = await resolutionRepository.getById(req.params.id);
+    if (!resolution) {
+      return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Resolution not found' } });
     }
-  ]);
-}
-
-initSampleResolutions();
-
-// GET /api/resolutions
-router.get('/', (req: Request, res: Response) => {
-  const { status, priority, assignedEngineerId, page = '1', pageSize = '20' } = req.query;
-
-  let result = Array.from(resolutions.values());
-
-  // Apply filters
-  if (status) {
-    const statuses = (status as string).split(',');
-    result = result.filter(r => statuses.includes(r.status));
+    const swarm = await swarmRepository.getByResolution(resolution.id);
+    const updates = await resolutionRepository.getUpdates(resolution.id);
+    res.json({ success: true, data: { ...resolution, swarm, updates } });
+  } catch (error: any) {
+    console.error('[Resolutions] Error fetching by ID:', error);
+    res.status(500).json({ success: false, error: { code: 'FETCH_ERROR', message: error.message } });
   }
+});
 
-  if (priority) {
-    const priorities = (priority as string).split(',');
-    result = result.filter(r => priorities.includes(r.priority));
-  }
-
-  if (assignedEngineerId) {
-    result = result.filter(r => r.assignedEngineerId === assignedEngineerId);
-  }
-
-  // Sort by priority and creation time
-  result.sort((a, b) => {
-    const priorityOrder: Record<string, number> = { P0: 0, P1: 1, P2: 2, P3: 3 };
-    const priDiff = (priorityOrder[a.priority] || 3) - (priorityOrder[b.priority] || 3);
-    if (priDiff !== 0) return priDiff;
-    return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-  });
-
-  // Pagination
-  const pageNum = parseInt(page as string, 10);
-  const size = parseInt(pageSize as string, 10);
-  const start = (pageNum - 1) * size;
-  const paginatedResult = result.slice(start, start + size);
-
-  res.json({
-    success: true,
-    data: paginatedResult,
-    pagination: {
-      page: pageNum,
-      pageSize: size,
-      totalItems: result.length,
-      totalPages: Math.ceil(result.length / size)
+router.post('/', async (req: Request, res: Response) => {
+  try {
+    const { conversationId, issueType, owningTeam, ownerId, priority, title, description, initialNotes } = req.body;
+    if (!issueType || !owningTeam || !priority) {
+      return res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'issueType, owningTeam, and priority are required' } });
     }
-  });
-});
-
-// GET /api/resolutions/:id
-router.get('/:id', (req: Request, res: Response) => {
-  const resolution = resolutions.get(req.params.id);
-
-  if (!resolution) {
-    return res.status(404).json({
-      success: false,
-      error: { code: 'NOT_FOUND', message: 'Resolution not found' }
-    });
-  }
-
-  const resolutionUpdates = updates.get(req.params.id) || [];
-
-  res.json({
-    success: true,
-    data: {
-      ...resolution,
-      updates: resolutionUpdates
+    const resolution = await resolutionRepository.create({ conversationId, issueType, owningTeam, ownerId, priority, title, description });
+    if (initialNotes) {
+      await resolutionRepository.addUpdate(resolution.id, 'note', initialNotes, 'system', 'internal', 'app');
     }
-  });
+    res.status(201).json({ success: true, data: resolution });
+  } catch (error: any) {
+    console.error('[Resolutions] Error creating:', error);
+    res.status(500).json({ success: false, error: { code: 'CREATE_ERROR', message: error.message } });
+  }
 });
 
-// POST /api/resolutions
-router.post('/', (req: Request, res: Response) => {
-  const {
-    conversationId,
-    customerId,
-    title,
-    description,
-    issueType,
-    priority,
-    assignedTeamId,
-    assignedEngineerId
-  } = req.body;
-
-  const id = `res_${uuidv4().slice(0, 8)}`;
-  const now = new Date().toISOString();
-
-  const resolution = {
-    id,
-    conversationId: conversationId || null,
-    customerId: customerId || null,
-    title: title || 'New Resolution',
-    description: description || '',
-    issueType: issueType || 'unknown',
-    priority: priority || 'P2',
-    status: 'investigating',
-    assignedTeamId: assignedTeamId || null,
-    assignedEngineerId: assignedEngineerId || null,
-    slackChannelId: null,
-    slackChannelName: null,
-    rootCause: null,
-    affectedSystems: [],
-    timeline: [
-      {
-        timestamp: now,
-        event: 'Resolution created'
-      }
-    ],
-    customerLastUpdatedAt: null,
-    nextUpdateDueAt: new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString(),
-    estimatedResolutionAt: null,
-    createdAt: now,
-    updatedAt: now
-  };
-
-  resolutions.set(id, resolution);
-  updates.set(id, []);
-
-  res.status(201).json({
-    success: true,
-    data: resolution
-  });
-});
-
-// POST /api/resolutions/:id/updates
-router.post('/:id/updates', (req: Request, res: Response) => {
-  const resolution = resolutions.get(req.params.id);
-
-  if (!resolution) {
-    return res.status(404).json({
-      success: false,
-      error: { code: 'NOT_FOUND', message: 'Resolution not found' }
-    });
-  }
-
-  const { type, content, isCustomerFacing, sendToCustomer } = req.body;
-  const now = new Date().toISOString();
-
-  const update = {
-    id: `update_${uuidv4().slice(0, 8)}`,
-    resolutionId: req.params.id,
-    type: type || 'note',
-    content: content || '',
-    isCustomerFacing: isCustomerFacing || false,
-    sentToCustomer: sendToCustomer || false,
-    sentToCustomerAt: sendToCustomer ? now : null,
-    authorId: 'user_current', // Would come from auth
-    authorName: 'Current User',
-    createdAt: now
-  };
-
-  const resolutionUpdates = updates.get(req.params.id) || [];
-  resolutionUpdates.push(update);
-  updates.set(req.params.id, resolutionUpdates);
-
-  // Add to timeline
-  resolution.timeline.push({
-    timestamp: now,
-    event: `Update added: ${content.substring(0, 50)}...`
-  });
-
-  if (sendToCustomer) {
-    resolution.customerLastUpdatedAt = now;
-    resolution.nextUpdateDueAt = new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString();
-  }
-
-  resolution.updatedAt = now;
-
-  res.status(201).json({
-    success: true,
-    data: update
-  });
-});
-
-// PATCH /api/resolutions/:id/status
-router.patch('/:id/status', (req: Request, res: Response) => {
-  const resolution = resolutions.get(req.params.id);
-
-  if (!resolution) {
-    return res.status(404).json({
-      success: false,
-      error: { code: 'NOT_FOUND', message: 'Resolution not found' }
-    });
-  }
-
-  const { status, rootCause, affectedSystems, estimatedResolutionAt } = req.body;
-  const now = new Date().toISOString();
-
-  const previousStatus = resolution.status;
-
-  if (status) {
-    resolution.status = status;
-    resolution.timeline.push({
-      timestamp: now,
-      event: `Status changed from ${previousStatus} to ${status}`
-    });
-  }
-
-  if (rootCause) resolution.rootCause = rootCause;
-  if (affectedSystems) resolution.affectedSystems = affectedSystems;
-  if (estimatedResolutionAt) resolution.estimatedResolutionAt = estimatedResolutionAt;
-
-  resolution.updatedAt = now;
-
-  // Add status change update
-  const resolutionUpdates = updates.get(req.params.id) || [];
-  resolutionUpdates.push({
-    id: `update_${uuidv4().slice(0, 8)}`,
-    resolutionId: req.params.id,
-    type: 'status_change',
-    previousStatus,
-    newStatus: status,
-    content: `Status changed from ${previousStatus} to ${status}`,
-    isCustomerFacing: false,
-    authorId: 'user_current',
-    authorName: 'Current User',
-    createdAt: now
-  });
-  updates.set(req.params.id, resolutionUpdates);
-
-  res.json({
-    success: true,
-    data: resolution
-  });
-});
-
-// POST /api/resolutions/:id/slack-swarm
-router.post('/:id/slack-swarm', (req: Request, res: Response) => {
-  const resolution = resolutions.get(req.params.id);
-
-  if (!resolution) {
-    return res.status(404).json({
-      success: false,
-      error: { code: 'NOT_FOUND', message: 'Resolution not found' }
-    });
-  }
-
-  const now = new Date().toISOString();
-
-  // Simulate Slack channel creation
-  const channelName = `incident-${resolution.id.slice(-8)}-${resolution.title.toLowerCase().replace(/[^a-z0-9]/g, '-').slice(0, 20)}`;
-  const channelId = `C${uuidv4().slice(0, 10).toUpperCase()}`;
-
-  resolution.slackChannelId = channelId;
-  resolution.slackChannelName = channelName;
-  resolution.updatedAt = now;
-
-  resolution.timeline.push({
-    timestamp: now,
-    event: `Slack swarm channel created: #${channelName}`
-  });
-
-  res.json({
-    success: true,
-    data: {
-      channelId,
-      channelName,
-      channelUrl: `https://slack.com/app_redirect?channel=${channelId}`
+router.patch('/:id', async (req: Request, res: Response) => {
+  try {
+    const resolution = await resolutionRepository.update(req.params.id, req.body);
+    if (!resolution) {
+      return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Resolution not found' } });
     }
-  });
+    res.json({ success: true, data: resolution });
+  } catch (error: any) {
+    console.error('[Resolutions] Error updating:', error);
+    res.status(500).json({ success: false, error: { code: 'UPDATE_ERROR', message: error.message } });
+  }
 });
 
-// POST /api/resolutions/:id/resolve
-router.post('/:id/resolve', (req: Request, res: Response) => {
-  const resolution = resolutions.get(req.params.id);
-
-  if (!resolution) {
-    return res.status(404).json({
-      success: false,
-      error: { code: 'NOT_FOUND', message: 'Resolution not found' }
-    });
+router.post('/:id/updates', async (req: Request, res: Response) => {
+  try {
+    const { content, type = 'note', visibility = 'internal', authorId = 'system' } = req.body;
+    if (!content) {
+      return res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'content is required' } });
+    }
+    const resolution = await resolutionRepository.getById(req.params.id);
+    if (!resolution) {
+      return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Resolution not found' } });
+    }
+    const update = await resolutionRepository.addUpdate(req.params.id, type, content, authorId, visibility, 'app');
+    const swarm = await swarmRepository.getByResolution(req.params.id);
+    if (swarm) {
+      const slackService = getSlackService();
+      await slackService.postResolutionUpdate(swarm.slackChannelId, {
+        resolutionId: resolution.id,
+        status: resolution.status,
+        message: content,
+        author: authorId,
+        isCustomerFacing: visibility === 'customer',
+      });
+    }
+    res.status(201).json({ success: true, data: update });
+  } catch (error: any) {
+    console.error('[Resolutions] Error adding update:', error);
+    res.status(500).json({ success: false, error: { code: 'UPDATE_ERROR', message: error.message } });
   }
+});
 
-  const { resolutionNotes, preventionMeasures } = req.body;
-  const now = new Date().toISOString();
+router.get('/:id/updates', async (req: Request, res: Response) => {
+  try {
+    const updates = await resolutionRepository.getUpdates(req.params.id);
+    res.json({ success: true, data: updates });
+  } catch (error: any) {
+    console.error('[Resolutions] Error fetching updates:', error);
+    res.status(500).json({ success: false, error: { code: 'FETCH_ERROR', message: error.message } });
+  }
+});
 
-  resolution.status = 'resolved';
-  resolution.resolvedAt = now;
-  resolution.updatedAt = now;
+router.post('/:id/slack-swarm', async (req: Request, res: Response) => {
+  try {
+    const resolution = await resolutionRepository.getById(req.params.id);
+    if (!resolution) {
+      return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Resolution not found' } });
+    }
+    const existingSwarm = await swarmRepository.getByResolution(resolution.id);
+    if (existingSwarm) {
+      return res.json({ success: true, data: existingSwarm });
+    }
+    const slackService = getSlackService();
+    const channel = await slackService.createSwarmChannel(
+      resolution.id,
+      resolution.title || 'Resolution ' + resolution.id,
+      resolution.description || resolution.issueType + ' issue - ' + resolution.owningTeam,
+      resolution.priority
+    );
+    if (!channel) {
+      return res.status(500).json({ success: false, error: { code: 'SLACK_ERROR', message: 'Failed to create Slack channel' } });
+    }
+    const swarm = await swarmRepository.create({
+      resolutionId: resolution.id,
+      slackChannelId: channel.id,
+      slackChannelName: channel.name,
+      slackChannelUrl: channel.url,
+    });
+    res.status(201).json({ success: true, data: swarm });
+  } catch (error: any) {
+    console.error('[Resolutions] Error creating swarm:', error);
+    res.status(500).json({ success: false, error: { code: 'SWARM_ERROR', message: error.message } });
+  }
+});
 
-  resolution.timeline.push({
-    timestamp: now,
-    event: 'Resolution marked as resolved'
-  });
-
-  // Add final update
-  const resolutionUpdates = updates.get(req.params.id) || [];
-  resolutionUpdates.push({
-    id: `update_${uuidv4().slice(0, 8)}`,
-    resolutionId: req.params.id,
-    type: 'resolved',
-    content: resolutionNotes || 'Issue has been resolved.',
-    isCustomerFacing: true,
-    sentToCustomer: true,
-    sentToCustomerAt: now,
-    authorId: 'user_current',
-    authorName: 'Current User',
-    createdAt: now
-  });
-  updates.set(req.params.id, resolutionUpdates);
-
-  res.json({
-    success: true,
-    data: resolution
-  });
+router.post('/:id/resolve', async (req: Request, res: Response) => {
+  try {
+    const { resolution: resolutionText, rootCause } = req.body;
+    const resolution = await resolutionRepository.update(req.params.id, {
+      status: 'resolved',
+      resolution: resolutionText,
+      rootCause,
+      actualResolutionAt: new Date(),
+    });
+    if (!resolution) {
+      return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Resolution not found' } });
+    }
+    await resolutionRepository.addUpdate(req.params.id, 'status_change', 'Resolution marked as resolved', 'system', 'internal', 'app');
+    const swarm = await swarmRepository.getByResolution(req.params.id);
+    if (swarm) {
+      const slackService = getSlackService();
+      await slackService.postMessage(swarm.slackChannelId, { text: 'This resolution has been marked as resolved. Channel will be archived.' });
+      await slackService.archiveChannel(swarm.slackChannelId);
+      await swarmRepository.update(swarm.id, { status: 'archived', archivedAt: new Date() });
+    }
+    res.json({ success: true, data: resolution });
+  } catch (error: any) {
+    console.error('[Resolutions] Error resolving:', error);
+    res.status(500).json({ success: false, error: { code: 'RESOLVE_ERROR', message: error.message } });
+  }
 });
 
 export default router;

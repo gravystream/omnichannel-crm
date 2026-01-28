@@ -53,9 +53,9 @@ export const CustomersPage: React.FC = () => {
     if (searchQuery) {
       const search = searchQuery.toLowerCase();
       return (
-        customer.profile.name?.toLowerCase().includes(search) ||
-        customer.identityGraph.emails.some(e => e.toLowerCase().includes(search)) ||
-        customer.profile.company?.toLowerCase().includes(search)
+        customer.name || customer.profile?.name?.toLowerCase().includes(search) ||
+        (customer.identityGraph?.emails || []).some(e => e.toLowerCase().includes(search)) ||
+        customer.profile?.company?.toLowerCase().includes(search)
       );
     }
     return true;
@@ -160,47 +160,47 @@ export const CustomersPage: React.FC = () => {
               <div className="flex items-start justify-between">
                 <div className="flex items-center gap-3">
                   <div className="w-12 h-12 bg-primary-100 rounded-full flex items-center justify-center text-primary-700 font-semibold text-lg">
-                    {customer.profile.name?.charAt(0).toUpperCase() || '?'}
+                    {customer.name || customer.profile?.name?.charAt(0).toUpperCase() || '?'}
                   </div>
                   <div>
-                    <h3 className="font-semibold text-gray-900">{customer.profile.name || 'Unknown'}</h3>
-                    {customer.profile.company && (
+                    <h3 className="font-semibold text-gray-900">{customer.name || customer.profile?.name || 'Unknown'}</h3>
+                    {customer.profile?.company && (
                       <p className="text-sm text-gray-500 flex items-center gap-1">
                         <BuildingOfficeIcon className="w-4 h-4" />
-                        {customer.profile.company}
+                        {customer.profile?.company}
                       </p>
                     )}
                   </div>
                 </div>
-                <span className={`px-2 py-1 text-xs font-medium rounded-full ${slaTierColors[customer.slaTier]}`}>
+                <span className={`px-2 py-1 text-xs font-medium rounded-full ${(slaTierColors[customer.slaTier] || "bg-gray-100 text-gray-800")}`}>
                   {customer.slaTier}
                 </span>
               </div>
 
               <div className="mt-4 space-y-2">
-                {customer.identityGraph.emails[0] && (
+                {customer.identityGraph?.emails?.[0] && (
                   <p className="text-sm text-gray-600 flex items-center gap-2">
                     <EnvelopeIcon className="w-4 h-4 text-gray-400" />
-                    {customer.identityGraph.emails[0]}
+                    {customer.identityGraph?.emails?.[0]}
                   </p>
                 )}
-                {customer.identityGraph.phoneNumbers[0] && (
+                {customer.identityGraph?.phoneNumbers?.[0] && (
                   <p className="text-sm text-gray-600 flex items-center gap-2">
                     <PhoneIcon className="w-4 h-4 text-gray-400" />
-                    {customer.identityGraph.phoneNumbers[0]}
+                    {customer.identityGraph?.phoneNumbers?.[0]}
                   </p>
                 )}
-                {customer.profile.location && (
+                {customer.profile?.location && (
                   <p className="text-sm text-gray-600 flex items-center gap-2">
                     <MapPinIcon className="w-4 h-4 text-gray-400" />
-                    {customer.profile.location}
+                    {customer.profile?.location}
                   </p>
                 )}
               </div>
 
               <div className="mt-4 pt-4 border-t border-gray-100 flex items-center justify-between">
                 <div className="flex gap-1">
-                  {customer.tags.slice(0, 3).map(tag => (
+                  {customer.tags?.slice(0, 3).map(tag => (
                     <span key={tag} className="px-2 py-0.5 text-xs bg-gray-100 text-gray-600 rounded">
                       {tag}
                     </span>
@@ -236,22 +236,22 @@ export const CustomersPage: React.FC = () => {
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 bg-primary-100 rounded-full flex items-center justify-center text-primary-700 font-semibold">
-                        {customer.profile.name?.charAt(0).toUpperCase() || '?'}
+                        {customer.name || customer.profile?.name?.charAt(0).toUpperCase() || '?'}
                       </div>
                       <div>
-                        <p className="font-medium text-gray-900">{customer.profile.name || 'Unknown'}</p>
-                        {customer.profile.company && (
-                          <p className="text-sm text-gray-500">{customer.profile.company}</p>
+                        <p className="font-medium text-gray-900">{customer.name || customer.profile?.name || 'Unknown'}</p>
+                        {customer.profile?.company && (
+                          <p className="text-sm text-gray-500">{customer.profile?.company}</p>
                         )}
                       </div>
                     </div>
                   </td>
                   <td className="px-4 py-3">
-                    <p className="text-sm text-gray-600">{customer.identityGraph.emails[0] || '-'}</p>
-                    <p className="text-sm text-gray-500">{customer.identityGraph.phoneNumbers[0] || '-'}</p>
+                    <p className="text-sm text-gray-600">{customer.identityGraph?.emails?.[0] || '-'}</p>
+                    <p className="text-sm text-gray-500">{customer.identityGraph?.phoneNumbers?.[0] || '-'}</p>
                   </td>
                   <td className="px-4 py-3">
-                    <span className={`px-2 py-1 text-xs font-medium rounded-full ${slaTierColors[customer.slaTier]}`}>
+                    <span className={`px-2 py-1 text-xs font-medium rounded-full ${(slaTierColors[customer.slaTier] || "bg-gray-100 text-gray-800")}`}>
                       {customer.slaTier}
                     </span>
                   </td>
@@ -262,7 +262,7 @@ export const CustomersPage: React.FC = () => {
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex gap-1">
-                      {customer.tags.slice(0, 2).map(tag => (
+                      {customer.tags?.slice(0, 2).map(tag => (
                         <span key={tag} className="px-2 py-0.5 text-xs bg-gray-100 text-gray-600 rounded">
                           {tag}
                         </span>

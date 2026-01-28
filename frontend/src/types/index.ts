@@ -76,6 +76,7 @@ export interface Attachment {
 
 // Customer Types
 export interface Customer {
+  name?: string;
   id: string;
   identityGraph: {
     emails: string[];

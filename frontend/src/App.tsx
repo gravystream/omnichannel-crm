@@ -1,8 +1,8 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { Provider } from 'react-redux';
 import { Toaster } from 'react-hot-toast';
-import { store, useAppSelector } from './store';
+import { store, useAppSelector, useAppDispatch, authActions } from './store';
 import { SocketProvider } from './contexts/SocketContext';
 
 // Layouts
@@ -17,6 +17,7 @@ import ConversationsPage from './pages/ConversationsPage';
 import ResolutionsPage from './pages/ResolutionsPage';
 import CustomersPage from './pages/CustomersPage';
 import KnowledgeBasePage from './pages/KnowledgeBasePage';
+import AIAgentPage from './pages/AIAgentPage';
 import AnalyticsPage from './pages/AnalyticsPage';
 import SettingsPage from './pages/SettingsPage';
 import AdminPage from './pages/AdminPage';
@@ -24,45 +25,104 @@ import AdminPage from './pages/AdminPage';
 // Auth wrapper component
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { isAuthenticated, isLoading } = useAppSelector(state => state.auth);
+  const hasToken = !!localStorage.getItem('token');
 
-  if (isLoading) {
+  // If loading but has token, show loading spinner briefly while verifying
+  if (isLoading && hasToken) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-100">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading...</p>
+          <p className="mt-4 text-gray-600">Verifying session...</p>
         </div>
       </div>
     );
   }
 
-  if (!isAuthenticated) {
+  // If not authenticated and no token, redirect to login
+  if (!isAuthenticated && !hasToken) {
     return <Navigate to="/login" replace />;
   }
 
+  // If has token (either authenticated or still verifying), render children
   return <>{children}</>;
 };
 
 const PublicRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { isAuthenticated, isLoading } = useAppSelector(state => state.auth);
+  const { isAuthenticated } = useAppSelector(state => state.auth);
 
-  if (isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-primary-600">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white mx-auto"></div>
-          <p className="mt-4 text-primary-100">Loading...</p>
-        </div>
-      </div>
-    );
-  }
-
+  // Don't block on loading - public routes should render immediately
   if (isAuthenticated) {
     return <Navigate to="/" replace />;
   }
 
   return <>{children}</>;
 };
+
+// Auth initialization component
+const AuthInitializer: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const dispatch = useAppDispatch();
+  const { token, isLoading } = useAppSelector(state => state.auth);
+
+  useEffect(() => {
+    const initAuth = async () => {
+      const storedToken = localStorage.getItem('token');
+      if (storedToken) {
+        try {
+          // Verify token by calling /auth/me
+          const response = await fetch('/api/v1/auth/me', {
+            headers: {
+              'Authorization': `Bearer ${storedToken}`,
+              'Content-Type': 'application/json'
+            }
+          });
+          
+          if (response.ok) {
+            const data = await response.json();
+            if (data.success && data.data) {
+              dispatch(authActions.setCredentials({ 
+                user: data.data, 
+                token: storedToken 
+              }));
+            } else {
+              // Invalid response, clear token
+              localStorage.removeItem('token');
+              dispatch(authActions.logout());
+            }
+          } else {
+            // Token invalid, clear it
+            localStorage.removeItem('token');
+            dispatch(authActions.logout());
+          }
+        } catch (error) {
+          console.error('Auth init error:', error);
+          localStorage.removeItem('token');
+          dispatch(authActions.logout());
+        }
+      } else {
+        // No token, just set loading to false
+        dispatch(authActions.logout());
+      }
+    };
+
+    initAuth();
+  }, [dispatch]);
+
+  if (isLoading && token) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-100">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Verifying session...</p>
+        </div>
+      </div>
+    );
+  }
+
+  return <>{children}</>;
+};
+
+
 
 // Admin route wrapper
 const AdminRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -77,7 +137,7 @@ const AdminRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 
 const AppRoutes: React.FC = () => {
   return (
-    <Routes>
+    <AuthInitializer><Routes>
       {/* Public routes */}
       <Route element={<PublicRoute><AuthLayout /></PublicRoute>}>
         <Route path="/login" element={<LoginPage />} />
@@ -94,6 +154,7 @@ const AppRoutes: React.FC = () => {
         <Route path="/customers" element={<CustomersPage />} />
         <Route path="/customers/:customerId" element={<CustomersPage />} />
         <Route path="/knowledge" element={<KnowledgeBasePage />} />
+              <Route path="/ai-agent" element={<AIAgentPage />} />
         <Route path="/analytics" element={<AnalyticsPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route
@@ -108,7 +169,7 @@ const AppRoutes: React.FC = () => {
 
       {/* Catch all */}
       <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+    </Routes></AuthInitializer>
   );
 };
 

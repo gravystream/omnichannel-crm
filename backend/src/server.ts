@@ -1,3 +1,4 @@
+import { initDatabase } from "./utils/database";
 /**
  * Omnichannel CRM - Main Server Entry Point
  */
@@ -86,7 +87,7 @@ const limiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
 });
-app.use('/api/', limiter);
+app.use('/api/v1/', limiter);
 
 // =============================================================================
 // HEALTH CHECKS
@@ -273,14 +274,14 @@ app.set('logger', logger);
 // API ROUTES
 // =============================================================================
 
-app.use('/api/auth', authRoutes);
-app.use('/api/conversations', conversationRoutes);
-app.use('/api/customers', customerRoutes);
-app.use('/api/resolutions', resolutionRoutes);
-app.use('/api/webhooks', webhookRoutes);
-app.use('/api/analytics', analyticsRoutes);
-app.use('/api/admin', adminRoutes);
-app.use('/api/ai', aiRoutes);
+app.use('/api/v1/auth', authRoutes);
+app.use('/api/v1/conversations', conversationRoutes);
+app.use('/api/v1/customers', customerRoutes);
+app.use('/api/v1/resolutions', resolutionRoutes);
+app.use('/api/v1/webhooks', webhookRoutes);
+app.use('/api/v1/analytics', analyticsRoutes);
+app.use('/api/v1/admin', adminRoutes);
+app.use('/api/v1/ai', aiRoutes);
 
 // API documentation
 app.get('/api', (req: Request, res: Response) => {
@@ -288,15 +289,15 @@ app.get('/api', (req: Request, res: Response) => {
     name: 'Omnichannel CRM API',
     version: '1.0.0',
     endpoints: {
-      auth: '/api/auth',
-      conversations: '/api/conversations',
-      customers: '/api/customers',
-      resolutions: '/api/resolutions',
-      webhooks: '/api/webhooks',
-      analytics: '/api/analytics',
-      admin: '/api/admin',
+      auth: '/api/v1/auth',
+      conversations: '/api/v1/conversations',
+      customers: '/api/v1/customers',
+      resolutions: '/api/v1/resolutions',
+      webhooks: '/api/v1/webhooks',
+      analytics: '/api/v1/analytics',
+      admin: '/api/v1/admin',
     },
-    documentation: '/api/docs',
+    documentation: '/api/v1/docs',
   });
 });
 
@@ -406,6 +407,8 @@ app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
 const PORT = parseInt(process.env.PORT || '3000', 10);
 
 async function startServer() {
+  // Initialize PostgreSQL database
+  await initDatabase();
   try {
     // Initialize event bus
     await eventBus.initialize();

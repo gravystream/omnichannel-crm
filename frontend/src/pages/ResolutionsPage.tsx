@@ -95,7 +95,7 @@ export const ResolutionsPage: React.FC = () => {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         {(['P0', 'P1', 'P2', 'P3'] as ResolutionPriority[]).map(priority => {
           const count = activeResolutions.filter(r => r.priority === priority).length;
-          const config = priorityConfig[priority];
+          const config = (priorityConfig[priority] || { color: "text-gray-700", bg: "bg-gray-100", label: "Unknown" });
           return (
             <div
               key={priority}
@@ -160,7 +160,7 @@ export const ResolutionsPage: React.FC = () => {
             <div className="p-8 text-center text-gray-500">No active resolutions</div>
           ) : (
             activeResolutions.map(res => {
-              const StatusIcon = statusConfig[res.status].icon;
+              const StatusIcon = (statusConfig[res.status] || { icon: ClockIcon, color: "text-gray-700", bg: "bg-gray-100" }).icon;
               return (
                 <div
                   key={res.id}
@@ -169,7 +169,7 @@ export const ResolutionsPage: React.FC = () => {
                 >
                   <div className="flex items-start justify-between">
                     <div className="flex items-start gap-3">
-                      <span className={`px-2 py-1 text-xs font-bold rounded ${priorityConfig[res.priority].bg} ${priorityConfig[res.priority].color}`}>
+                      <span className={`px-2 py-1 text-xs font-bold rounded ${(priorityConfig[res.priority] || { color: "text-gray-700", bg: "bg-gray-100", label: "Unknown" }).bg} ${(priorityConfig[res.priority] || { color: "text-gray-700", bg: "bg-gray-100", label: "Unknown" }).color}`}>
                         {res.priority}
                       </span>
                       <div>
@@ -177,7 +177,7 @@ export const ResolutionsPage: React.FC = () => {
                         <p className="text-sm text-gray-500 mt-0.5 line-clamp-2">{res.description}</p>
                         <div className="flex items-center gap-4 mt-2 text-xs text-gray-500">
                           <span className="flex items-center gap-1">
-                            <StatusIcon className={`w-4 h-4 ${statusConfig[res.status].color}`} />
+                            <StatusIcon className={`w-4 h-4 ${(statusConfig[res.status] || { icon: ClockIcon, color: "text-gray-700", bg: "bg-gray-100" }).color}`} />
                             <span className="capitalize">{res.status.replace('_', ' ')}</span>
                           </span>
                           {res.eta && (
@@ -231,7 +231,7 @@ export const ResolutionsPage: React.FC = () => {
                       </p>
                     </div>
                   </div>
-                  <span className={`px-2 py-1 text-xs rounded ${priorityConfig[res.priority].bg} ${priorityConfig[res.priority].color}`}>
+                  <span className={`px-2 py-1 text-xs rounded ${(priorityConfig[res.priority] || { color: "text-gray-700", bg: "bg-gray-100", label: "Unknown" }).bg} ${(priorityConfig[res.priority] || { color: "text-gray-700", bg: "bg-gray-100", label: "Unknown" }).color}`}>
                     {res.priority}
                   </span>
                 </div>
