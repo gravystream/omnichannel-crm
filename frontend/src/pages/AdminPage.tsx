@@ -1,922 +1,563 @@
 import React, { useState, useEffect } from 'react';
-import {
-  UserGroupIcon,
-  Cog6ToothIcon,
-  ChatBubbleLeftRightIcon,
-  EnvelopeIcon,
-  ShieldCheckIcon,
-  PlusIcon,
-  PencilSquareIcon,
-  TrashIcon,
-  CheckCircleIcon,
-  XCircleIcon,
-  SparklesIcon,
-} from '@heroicons/react/24/outline';
-import { adminApi, aiApi } from '../services/api';
-import type { User } from '../types';
+import api from '../services/api';
 
-const tabs = [
-  { id: 'users', name: 'Users', icon: UserGroupIcon },
-  { id: 'channels', name: 'Channels', icon: ChatBubbleLeftRightIcon },
-  { id: 'email', name: 'Email Integration', icon: EnvelopeIcon },
-  { id: 'ai', name: 'AI Settings', icon: SparklesIcon },
-  { id: 'general', name: 'General Settings', icon: Cog6ToothIcon },
-  { id: 'security', name: 'Security', icon: ShieldCheckIcon },
-];
+interface Role {
+  id: string;
+  name: string;
+  description: string;
+  permissions: string[];
+  color: string;
+}
 
-const roleColors: Record<string, string> = {
-  owner: 'bg-purple-100 text-purple-700',
-  admin: 'bg-blue-100 text-blue-700',
-  agent: 'bg-green-100 text-green-700',
-  viewer: 'bg-gray-100 text-gray-700',
-};
+interface Designation {
+  id: string;
+  name: string;
+  department: string;
+  level: number;
+}
 
-const mockUsers: User[] = [
-  {
-    id: 'user_1', email: 'owner@gravystream.io', name: 'System Owner', role: 'owner',
-    status: 'online', skills: ['all'], maxConcurrentChats: 10, createdAt: new Date().toISOString(),
-  },
-  {
-    id: 'user_2', email: 'admin@gravystream.io', name: 'Admin User', role: 'admin',
-    status: 'online', skills: ['billing', 'technical'], maxConcurrentChats: 8, createdAt: new Date().toISOString(),
-  },
-  {
-    id: 'user_3', email: 'agent@gravystream.io', name: 'Support Agent', role: 'agent',
-    status: 'away', skills: ['general', 'billing'], maxConcurrentChats: 5, createdAt: new Date().toISOString(),
-  },
-];
+interface Agent {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  roleId: string;
+  designationId: string;
+  status: 'online' | 'away' | 'offline';
+  avatar: string;
+  department: string;
+  joinedAt: string;
+  skills: string[];
+  maxChats: number;
+  role?: Role;
+  designation?: Designation;
+}
 
-const channelConfigs = [
-  { id: 'web_chat', name: 'Web Chat', enabled: true, icon: '💬' },
-  { id: 'email', name: 'Email', enabled: true, icon: '📧' },
-  { id: 'whatsapp', name: 'WhatsApp', enabled: false, icon: '📱' },
-  { id: 'sms', name: 'SMS', enabled: false, icon: '📲' },
-];
+interface Permission {
+  id: string;
+  name: string;
+  description: string;
+}
 
-export const AdminPage: React.FC = () => {
-  const [activeTab, setActiveTab] = useState('users');
-  const [users, setUsers] = useState<User[]>(mockUsers);
-  const [showUserModal, setShowUserModal] = useState(false);
-  const [editingUser, setEditingUser] = useState<User | null>(null);
-  const [settings, setSettings] = useState({
-    companyName: 'GravyStream',
-    supportEmail: 'support@gravystream.io',
-    defaultResponseTime: '1 hour',
-    workingHours: '9:00 AM - 6:00 PM',
-    timezone: 'America/New_York',
-    autoAssignment: true,
-    maxChatsPerAgent: 5,
+const AdminPage: React.FC = () => {
+  const [activeTab, setActiveTab] = useState<'agents' | 'roles' | 'designations'>('agents');
+  const [agents, setAgents] = useState<Agent[]>([]);
+  const [roles, setRoles] = useState<Role[]>([]);
+  const [designations, setDesignations] = useState<Designation[]>([]);
+  const [permissions, setPermissions] = useState<Permission[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showAgentModal, setShowAgentModal] = useState(false);
+  const [showRoleModal, setShowRoleModal] = useState(false);
+  const [showDesignationModal, setShowDesignationModal] = useState(false);
+  const [editingAgent, setEditingAgent] = useState<Agent | null>(null);
+  const [editingRole, setEditingRole] = useState<Role | null>(null);
+  const [editingDesignation, setEditingDesignation] = useState<Designation | null>(null);
+
+  const [agentForm, setAgentForm] = useState({
+    name: '', email: '', phone: '', roleId: '', designationId: '', department: 'Support', skills: '', maxChats: 5
   });
-  const [emailSettings, setEmailSettings] = useState({
-    provider: 'zoho',
-    imapHost: 'imap.zoho.com',
-    imapPort: '993',
-    smtpHost: 'smtp.zoho.com',
-    smtpPort: '465',
-    email: 'support@gravystream.io',
-    password: '',
-    ssl: true,
-    connected: false,
+
+  const [roleForm, setRoleForm] = useState({
+    name: '', description: '', permissions: [] as string[], color: '#6b7280'
   });
-  const [aiSettings, setAiSettings] = useState({
-    provider: 'anthropic',
-    apiKey: '',
-    model: 'claude-3-sonnet-20240229',
-    autoResponse: false,
-    confidenceThreshold: 0.7,
-    maxTokens: 1000,
-    temperature: 0.7,
+
+  const [designationForm, setDesignationForm] = useState({
+    name: '', department: 'Support', level: 5
   });
-  const [aiTrainingData, setAiTrainingData] = useState<any[]>([]);
-  const [aiTestMessage, setAiTestMessage] = useState('');
-  const [aiTestResponse, setAiTestResponse] = useState('');
-  const [aiLoading, setAiLoading] = useState(false);
-  const [aiSaveStatus, setAiSaveStatus] = useState('');
 
   useEffect(() => {
-    fetchUsers();
-    fetchAiConfig();
+    fetchData();
   }, []);
 
-  const fetchUsers = async () => {
+  const fetchData = async () => {
+    setLoading(true);
     try {
-      const response = await adminApi.getUsers();
-      if (response.success && response.data) {
-        setUsers(response.data);
-      }
-    } catch (error) {
-      // Use mock data
-    }
-  };
-
-  const fetchAiConfig = async () => {
-    try {
-      const [configResponse, trainingResponse] = await Promise.all([
-        aiApi.getConfig(),
-        aiApi.getTrainingData()
+      const [agentsRes, rolesRes, desRes, permsRes] = await Promise.all([
+        api.get('/api/v1/agents'),
+        api.get('/api/v1/agents/config/roles'),
+        api.get('/api/v1/agents/config/designations'),
+        api.get('/api/v1/agents/config/permissions')
       ]);
-      if (configResponse.success && configResponse.data) {
-        setAiSettings(prev => ({
-          ...prev,
-          ...configResponse.data,
-          apiKey: configResponse.data.apiKey ? '••••••••••••••••' : ''
-        }));
-      }
-      if (trainingResponse.success && trainingResponse.data) {
-        setAiTrainingData(trainingResponse.data);
-      }
-    } catch (error) {
-      console.error('Failed to fetch AI config:', error);
+      setAgents(agentsRes.data);
+      setRoles(rolesRes.data);
+      setDesignations(desRes.data);
+      setPermissions(permsRes.data);
+    } catch (err) {
+      console.error('Error fetching data:', err);
     }
+    setLoading(false);
   };
 
-  const handleSaveAiConfig = async () => {
-    setAiLoading(true);
-    setAiSaveStatus('');
+  const handleSaveAgent = async () => {
     try {
-      const configToSave = {
-        ...aiSettings,
-        apiKey: aiSettings.apiKey.includes('•') ? undefined : aiSettings.apiKey
+      const data = {
+        ...agentForm,
+        skills: agentForm.skills.split(',').map(s => s.trim()).filter(Boolean)
       };
-      const response = await aiApi.saveConfig(configToSave);
-      if (response.success) {
-        setAiSaveStatus('Configuration saved successfully!');
-        setTimeout(() => setAiSaveStatus(''), 3000);
+      if (editingAgent) {
+        await api.put('/api/v1/agents/' + editingAgent.id, data);
+      } else {
+        await api.post('/api/v1/agents', data);
       }
-    } catch (error) {
-      setAiSaveStatus('Failed to save configuration');
-    } finally {
-      setAiLoading(false);
+      fetchData();
+      setShowAgentModal(false);
+      resetAgentForm();
+    } catch (err) {
+      console.error('Error saving agent:', err);
     }
   };
 
-  const handleTestAi = async () => {
-    if (!aiTestMessage.trim()) return;
-    setAiLoading(true);
-    setAiTestResponse('');
+  const handleDeleteAgent = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this agent?')) return;
     try {
-      const response = await aiApi.testAI(aiTestMessage);
-      if (response.success && response.data) {
-        setAiTestResponse(response.data.response);
+      await api.delete('/api/v1/agents/' + id);
+      fetchData();
+    } catch (err) {
+      console.error('Error deleting agent:', err);
+    }
+  };
+
+  const handleSaveRole = async () => {
+    try {
+      if (editingRole) {
+        await api.put('/api/v1/agents/config/roles/' + editingRole.id, roleForm);
+      } else {
+        await api.post('/api/v1/agents/config/roles', roleForm);
       }
-    } catch (error: any) {
-      setAiTestResponse(`Error: ${error.response?.data?.error?.message || 'Failed to test AI'}`);
-    } finally {
-      setAiLoading(false);
+      fetchData();
+      setShowRoleModal(false);
+      resetRoleForm();
+    } catch (err) {
+      console.error('Error saving role:', err);
     }
   };
 
-  const handleSaveUser = async (userData: Partial<User>) => {
-    if (editingUser) {
-      // Update
-      setUsers(users.map(u => u.id === editingUser.id ? { ...u, ...userData } : u));
-    } else {
-      // Create
-      const newUser: User = {
-        id: `user_${Date.now()}`,
-        email: userData.email || '',
-        name: userData.name || '',
-        role: userData.role || 'agent',
-        status: 'offline',
-        skills: userData.skills || [],
-        maxConcurrentChats: userData.maxConcurrentChats || 5,
-        createdAt: new Date().toISOString(),
-      };
-      setUsers([...users, newUser]);
-    }
-    setShowUserModal(false);
-    setEditingUser(null);
-  };
-
-  const handleDeleteUser = (userId: string) => {
-    if (window.confirm('Are you sure you want to delete this user?')) {
-      setUsers(users.filter(u => u.id !== userId));
+  const handleDeleteRole = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this role?')) return;
+    try {
+      await api.delete('/api/v1/agents/config/roles/' + id);
+      fetchData();
+    } catch (err: any) {
+      alert(err.response?.data?.error || 'Error deleting role');
     }
   };
 
-  const testEmailConnection = () => {
-    // Simulate connection test
-    setTimeout(() => {
-      setEmailSettings({ ...emailSettings, connected: true });
-    }, 1500);
+  const handleSaveDesignation = async () => {
+    try {
+      if (editingDesignation) {
+        await api.put('/api/v1/agents/config/designations/' + editingDesignation.id, designationForm);
+      } else {
+        await api.post('/api/v1/agents/config/designations', designationForm);
+      }
+      fetchData();
+      setShowDesignationModal(false);
+      resetDesignationForm();
+    } catch (err) {
+      console.error('Error saving designation:', err);
+    }
   };
+
+  const handleDeleteDesignation = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this designation?')) return;
+    try {
+      await api.delete('/api/v1/agents/config/designations/' + id);
+      fetchData();
+    } catch (err: any) {
+      alert(err.response?.data?.error || 'Error deleting designation');
+    }
+  };
+
+  const resetAgentForm = () => {
+    setAgentForm({ name: '', email: '', phone: '', roleId: '', designationId: '', department: 'Support', skills: '', maxChats: 5 });
+    setEditingAgent(null);
+  };
+
+  const resetRoleForm = () => {
+    setRoleForm({ name: '', description: '', permissions: [], color: '#6b7280' });
+    setEditingRole(null);
+  };
+
+  const resetDesignationForm = () => {
+    setDesignationForm({ name: '', department: 'Support', level: 5 });
+    setEditingDesignation(null);
+  };
+
+  const openEditAgent = (agent: Agent) => {
+    setEditingAgent(agent);
+    setAgentForm({
+      name: agent.name,
+      email: agent.email,
+      phone: agent.phone,
+      roleId: agent.roleId,
+      designationId: agent.designationId,
+      department: agent.department,
+      skills: agent.skills.join(', '),
+      maxChats: agent.maxChats
+    });
+    setShowAgentModal(true);
+  };
+
+  const openEditRole = (role: Role) => {
+    setEditingRole(role);
+    setRoleForm({
+      name: role.name,
+      description: role.description,
+      permissions: role.permissions,
+      color: role.color
+    });
+    setShowRoleModal(true);
+  };
+
+  const openEditDesignation = (des: Designation) => {
+    setEditingDesignation(des);
+    setDesignationForm({
+      name: des.name,
+      department: des.department,
+      level: des.level
+    });
+    setShowDesignationModal(true);
+  };
+
+  const togglePermission = (permId: string) => {
+    setRoleForm(prev => ({
+      ...prev,
+      permissions: prev.permissions.includes(permId)
+        ? prev.permissions.filter(p => p !== permId)
+        : [...prev.permissions, permId]
+    }));
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'online': return 'bg-green-500';
+      case 'away': return 'bg-yellow-500';
+      default: return 'bg-gray-400';
+    }
+  };
+
+  if (loading) {
+    return <div className="flex items-center justify-center h-64"><div className="text-gray-500">Loading...</div></div>;
+  }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Administration</h1>
-        <p className="text-gray-500 mt-1">Manage system settings and users</p>
+    <div className="p-6">
+      <h1 className="text-2xl font-bold text-gray-800 mb-2">Administration</h1>
+      <p className="text-gray-600 mb-6">Manage agents, roles, and designations</p>
+
+      <div className="border-b border-gray-200 mb-6">
+        <nav className="flex space-x-8">
+          {['agents', 'roles', 'designations'].map(tab => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab as any)}
+              className={'py-3 px-1 border-b-2 font-medium text-sm ' + 
+                (activeTab === tab 
+                  ? 'border-blue-500 text-blue-600' 
+                  : 'border-transparent text-gray-500 hover:text-gray-700')}
+            >
+              {tab.charAt(0).toUpperCase() + tab.slice(1)}
+              <span className="ml-2 bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full text-xs">
+                {tab === 'agents' ? agents.length : tab === 'roles' ? roles.length : designations.length}
+              </span>
+            </button>
+          ))}
+        </nav>
       </div>
 
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-        <div className="grid grid-cols-1 lg:grid-cols-5">
-          {/* Sidebar */}
-          <div className="lg:border-r border-gray-100 p-4">
-            <nav className="space-y-1">
-              {tabs.map(tab => (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-left transition-colors ${
-                    activeTab === tab.id
-                      ? 'bg-primary-50 text-primary-700'
-                      : 'text-gray-600 hover:bg-gray-50'
-                  }`}
-                >
-                  <tab.icon className="w-5 h-5" />
-                  <span className="font-medium">{tab.name}</span>
-                </button>
-              ))}
-            </nav>
+      {/* Agents Tab */}
+      {activeTab === 'agents' && (
+        <div>
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-lg font-semibold">Team Members</h2>
+            <button
+              onClick={() => { resetAgentForm(); setShowAgentModal(true); }}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            >
+              + Add Agent
+            </button>
           </div>
-
-          {/* Content */}
-          <div className="lg:col-span-4 p-6">
-            {/* Users Tab */}
-            {activeTab === 'users' && (
-              <div className="space-y-6">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-lg font-semibold text-gray-900">User Management</h2>
-                  <button
-                    onClick={() => { setEditingUser(null); setShowUserModal(true); }}
-                    className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 flex items-center gap-2"
-                  >
-                    <PlusIcon className="w-5 h-5" />
-                    Add User
-                  </button>
-                </div>
-
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">User</th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Role</th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Status</th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Skills</th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100">
-                      {users.map(user => (
-                        <tr key={user.id} className="hover:bg-gray-50">
-                          <td className="px-4 py-3">
-                            <div className="flex items-center gap-3">
-                              <div className="w-10 h-10 bg-primary-100 rounded-full flex items-center justify-center text-primary-700 font-semibold">
-                                {user.name.charAt(0)}
-                              </div>
-                              <div>
-                                <p className="font-medium text-gray-900">{user.name}</p>
-                                <p className="text-sm text-gray-500">{user.email}</p>
-                              </div>
-                            </div>
-                          </td>
-                          <td className="px-4 py-3">
-                            <span className={`px-2 py-1 text-xs font-medium rounded-full capitalize ${roleColors[user.role]}`}>
-                              {user.role}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3">
-                            <span className={`flex items-center gap-1 text-sm capitalize ${
-                              user.status === 'online' ? 'text-green-600' : 'text-gray-500'
-                            }`}>
-                              <span className={`w-2 h-2 rounded-full ${
-                                user.status === 'online' ? 'bg-green-500' : 'bg-gray-400'
-                              }`} />
-                              {user.status}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3">
-                            <div className="flex gap-1">
-                              {user.skills.slice(0, 2).map(skill => (
-                                <span key={skill} className="px-2 py-0.5 text-xs bg-gray-100 text-gray-600 rounded">
-                                  {skill}
-                                </span>
-                              ))}
-                            </div>
-                          </td>
-                          <td className="px-4 py-3">
-                            <div className="flex items-center gap-1">
-                              <button
-                                onClick={() => { setEditingUser(user); setShowUserModal(true); }}
-                                className="p-1.5 text-gray-500 hover:bg-gray-100 rounded-lg"
-                              >
-                                <PencilSquareIcon className="w-4 h-4" />
-                              </button>
-                              {user.role !== 'owner' && (
-                                <button
-                                  onClick={() => handleDeleteUser(user.id)}
-                                  className="p-1.5 text-gray-500 hover:bg-red-50 hover:text-red-500 rounded-lg"
-                                >
-                                  <TrashIcon className="w-4 h-4" />
-                                </button>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-
-            {/* Channels Tab */}
-            {activeTab === 'channels' && (
-              <div className="space-y-6">
-                <h2 className="text-lg font-semibold text-gray-900">Channel Configuration</h2>
-
-                <div className="grid gap-4">
-                  {channelConfigs.map(channel => (
-                    <div key={channel.id} className="p-4 border border-gray-200 rounded-lg flex items-center justify-between">
-                      <div className="flex items-center gap-4">
-                        <span className="text-2xl">{channel.icon}</span>
-                        <div>
-                          <p className="font-medium text-gray-900">{channel.name}</p>
-                          <p className="text-sm text-gray-500">
-                            {channel.enabled ? 'Active and receiving messages' : 'Not configured'}
-                          </p>
+          <div className="bg-white rounded-lg shadow overflow-hidden">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Agent</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Role</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Designation</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Skills</th>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {agents.map(agent => (
+                  <tr key={agent.id} className="hover:bg-gray-50">
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="flex items-center">
+                        <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-semibold">
+                          {agent.name.split(' ').map(n => n[0]).join('')}
+                        </div>
+                        <div className="ml-4">
+                          <div className="text-sm font-medium text-gray-900">{agent.name}</div>
+                          <div className="text-sm text-gray-500">{agent.email}</div>
                         </div>
                       </div>
-                      <div className="flex items-center gap-4">
-                        {channel.enabled ? (
-                          <span className="flex items-center gap-1 text-green-600 text-sm">
-                            <CheckCircleIcon className="w-5 h-5" />
-                            Connected
-                          </span>
-                        ) : (
-                          <span className="flex items-center gap-1 text-gray-500 text-sm">
-                            <XCircleIcon className="w-5 h-5" />
-                            Disabled
-                          </span>
-                        )}
-                        <button className="px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-50">
-                          Configure
-                        </button>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span className="px-2 py-1 text-xs rounded-full text-white" style={{backgroundColor: agent.role?.color || '#6b7280'}}>
+                        {agent.role?.name || 'No Role'}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {agent.designation?.name || 'No Designation'}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span className="flex items-center">
+                        <span className={'w-2 h-2 rounded-full mr-2 ' + getStatusColor(agent.status)}></span>
+                        <span className="text-sm text-gray-600 capitalize">{agent.status}</span>
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="flex flex-wrap gap-1">
+                        {agent.skills.slice(0,2).map(skill => (
+                          <span key={skill} className="px-2 py-0.5 bg-gray-100 text-gray-600 text-xs rounded">{skill}</span>
+                        ))}
+                        {agent.skills.length > 2 && <span className="text-xs text-gray-400">+{agent.skills.length - 2}</span>}
                       </div>
-                    </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
+                      <button onClick={() => openEditAgent(agent)} className="text-blue-600 hover:text-blue-800 mr-3">Edit</button>
+                      <button onClick={() => handleDeleteAgent(agent.id)} className="text-red-600 hover:text-red-800">Delete</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Roles Tab */}
+      {activeTab === 'roles' && (
+        <div>
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-lg font-semibold">Roles & Permissions</h2>
+            <button
+              onClick={() => { resetRoleForm(); setShowRoleModal(true); }}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            >
+              + Add Role
+            </button>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {roles.map(role => (
+              <div key={role.id} className="bg-white rounded-lg shadow p-4 border-l-4" style={{borderLeftColor: role.color}}>
+                <div className="flex justify-between items-start mb-2">
+                  <h3 className="font-semibold text-gray-800">{role.name}</h3>
+                  <div>
+                    <button onClick={() => openEditRole(role)} className="text-blue-600 hover:text-blue-800 text-sm mr-2">Edit</button>
+                    <button onClick={() => handleDeleteRole(role.id)} className="text-red-600 hover:text-red-800 text-sm">Delete</button>
+                  </div>
+                </div>
+                <p className="text-sm text-gray-500 mb-3">{role.description}</p>
+                <div className="flex flex-wrap gap-1">
+                  {role.permissions.slice(0,4).map(perm => (
+                    <span key={perm} className="px-2 py-0.5 bg-gray-100 text-gray-600 text-xs rounded">{perm}</span>
+                  ))}
+                  {role.permissions.length > 4 && <span className="text-xs text-gray-400">+{role.permissions.length - 4} more</span>}
+                </div>
+                <div className="mt-3 text-xs text-gray-400">
+                  {agents.filter(a => a.roleId === role.id).length} agents assigned
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Designations Tab */}
+      {activeTab === 'designations' && (
+        <div>
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-lg font-semibold">Designations</h2>
+            <button
+              onClick={() => { resetDesignationForm(); setShowDesignationModal(true); }}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            >
+              + Add Designation
+            </button>
+          </div>
+          <div className="bg-white rounded-lg shadow overflow-hidden">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Designation</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Department</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Level</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Agents</th>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {designations.sort((a,b) => a.level - b.level).map(des => (
+                  <tr key={des.id} className="hover:bg-gray-50">
+                    <td className="px-6 py-4 whitespace-nowrap font-medium text-gray-900">{des.name}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{des.department}</td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full">Level {des.level}</span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {agents.filter(a => a.designationId === des.id).length} agents
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
+                      <button onClick={() => openEditDesignation(des)} className="text-blue-600 hover:text-blue-800 mr-3">Edit</button>
+                      <button onClick={() => handleDeleteDesignation(des.id)} className="text-red-600 hover:text-red-800">Delete</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Agent Modal */}
+      {showAgentModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
+            <h3 className="text-lg font-semibold mb-4">{editingAgent ? 'Edit Agent' : 'Add New Agent'}</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
+                <input type="text" value={agentForm.name} onChange={e => setAgentForm({...agentForm, name: e.target.value})}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2" placeholder="Full name" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Email *</label>
+                <input type="email" value={agentForm.email} onChange={e => setAgentForm({...agentForm, email: e.target.value})}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2" placeholder="email@example.com" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
+                <input type="tel" value={agentForm.phone} onChange={e => setAgentForm({...agentForm, phone: e.target.value})}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2" placeholder="+1234567890" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Role *</label>
+                <select value={agentForm.roleId} onChange={e => setAgentForm({...agentForm, roleId: e.target.value})}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2">
+                  <option value="">Select Role</option>
+                  {roles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Designation</label>
+                <select value={agentForm.designationId} onChange={e => setAgentForm({...agentForm, designationId: e.target.value})}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2">
+                  <option value="">Select Designation</option>
+                  {designations.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Department</label>
+                <input type="text" value={agentForm.department} onChange={e => setAgentForm({...agentForm, department: e.target.value})}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2" placeholder="Support" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Skills (comma separated)</label>
+                <input type="text" value={agentForm.skills} onChange={e => setAgentForm({...agentForm, skills: e.target.value})}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2" placeholder="billing, technical, sales" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Max Concurrent Chats</label>
+                <input type="number" min="1" max="20" value={agentForm.maxChats} onChange={e => setAgentForm({...agentForm, maxChats: parseInt(e.target.value)})}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2" />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 mt-6">
+              <button onClick={() => { setShowAgentModal(false); resetAgentForm(); }} className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
+              <button onClick={handleSaveAgent} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                {editingAgent ? 'Save Changes' : 'Add Agent'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Role Modal */}
+      {showRoleModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            <h3 className="text-lg font-semibold mb-4">{editingRole ? 'Edit Role' : 'Add New Role'}</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Role Name *</label>
+                <input type="text" value={roleForm.name} onChange={e => setRoleForm({...roleForm, name: e.target.value})}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2" placeholder="e.g., Team Lead" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                <input type="text" value={roleForm.description} onChange={e => setRoleForm({...roleForm, description: e.target.value})}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2" placeholder="Brief description" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Color</label>
+                <input type="color" value={roleForm.color} onChange={e => setRoleForm({...roleForm, color: e.target.value})}
+                  className="w-16 h-10 border border-gray-300 rounded cursor-pointer" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Permissions</label>
+                <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto border border-gray-200 rounded-lg p-3">
+                  {permissions.map(perm => (
+                    <label key={perm.id} className="flex items-center space-x-2 cursor-pointer hover:bg-gray-50 p-1 rounded">
+                      <input type="checkbox" checked={roleForm.permissions.includes(perm.id)} onChange={() => togglePermission(perm.id)}
+                        className="rounded border-gray-300" />
+                      <span className="text-sm text-gray-700">{perm.name}</span>
+                    </label>
                   ))}
                 </div>
               </div>
-            )}
-
-            {/* Email Integration Tab */}
-            {activeTab === 'email' && (
-              <div className="space-y-6">
-                <h2 className="text-lg font-semibold text-gray-900">Email Integration (Zoho)</h2>
-
-                <div className="p-4 border border-gray-200 rounded-lg space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">IMAP Host</label>
-                      <input
-                        type="text"
-                        value={emailSettings.imapHost}
-                        onChange={(e) => setEmailSettings({ ...emailSettings, imapHost: e.target.value })}
-                        className="w-full border border-gray-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-primary-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">IMAP Port</label>
-                      <input
-                        type="text"
-                        value={emailSettings.imapPort}
-                        onChange={(e) => setEmailSettings({ ...emailSettings, imapPort: e.target.value })}
-                        className="w-full border border-gray-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-primary-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">SMTP Host</label>
-                      <input
-                        type="text"
-                        value={emailSettings.smtpHost}
-                        onChange={(e) => setEmailSettings({ ...emailSettings, smtpHost: e.target.value })}
-                        className="w-full border border-gray-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-primary-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">SMTP Port</label>
-                      <input
-                        type="text"
-                        value={emailSettings.smtpPort}
-                        onChange={(e) => setEmailSettings({ ...emailSettings, smtpPort: e.target.value })}
-                        className="w-full border border-gray-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-primary-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Email Address</label>
-                      <input
-                        type="email"
-                        value={emailSettings.email}
-                        onChange={(e) => setEmailSettings({ ...emailSettings, email: e.target.value })}
-                        className="w-full border border-gray-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-primary-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Password / App Password</label>
-                      <input
-                        type="password"
-                        value={emailSettings.password}
-                        onChange={(e) => setEmailSettings({ ...emailSettings, password: e.target.value })}
-                        className="w-full border border-gray-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-primary-500"
-                        placeholder="Enter app-specific password"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-4">
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={emailSettings.ssl}
-                        onChange={(e) => setEmailSettings({ ...emailSettings, ssl: e.target.checked })}
-                        className="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500"
-                      />
-                      <span className="text-gray-700">Use SSL/TLS</span>
-                    </label>
-                  </div>
-
-                  <div className="flex items-center justify-between pt-4 border-t">
-                    <div className="flex items-center gap-2">
-                      {emailSettings.connected ? (
-                        <span className="flex items-center gap-1 text-green-600">
-                          <CheckCircleIcon className="w-5 h-5" />
-                          Connected successfully
-                        </span>
-                      ) : (
-                        <span className="text-gray-500">Not connected</span>
-                      )}
-                    </div>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={testEmailConnection}
-                        className="px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-50"
-                      >
-                        Test Connection
-                      </button>
-                      <button className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700">
-                        Save Settings
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* AI Settings Tab */}
-            {activeTab === 'ai' && (
-              <div className="space-y-6">
-                <h2 className="text-lg font-semibold text-gray-900">AI Configuration</h2>
-
-                {aiSaveStatus && (
-                  <div className={`p-3 rounded-lg ${aiSaveStatus.includes('success') ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
-                    {aiSaveStatus}
-                  </div>
-                )}
-
-                <div className="p-4 border border-gray-200 rounded-lg space-y-4">
-                  <h3 className="font-medium text-gray-900">Provider Settings</h3>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">AI Provider</label>
-                      <select
-                        value={aiSettings.provider}
-                        onChange={(e) => setAiSettings({ ...aiSettings, provider: e.target.value })}
-                        className="w-full border border-gray-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-primary-500"
-                      >
-                        <option value="anthropic">Anthropic (Claude)</option>
-                        <option value="openai">OpenAI (GPT)</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Model</label>
-                      <select
-                        value={aiSettings.model}
-                        onChange={(e) => setAiSettings({ ...aiSettings, model: e.target.value })}
-                        className="w-full border border-gray-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-primary-500"
-                      >
-                        {aiSettings.provider === 'anthropic' ? (
-                          <>
-                            <option value="claude-3-sonnet-20240229">Claude 3 Sonnet</option>
-                            <option value="claude-3-opus-20240229">Claude 3 Opus</option>
-                            <option value="claude-3-haiku-20240307">Claude 3 Haiku</option>
-                          </>
-                        ) : (
-                          <>
-                            <option value="gpt-4">GPT-4</option>
-                            <option value="gpt-4-turbo">GPT-4 Turbo</option>
-                            <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
-                          </>
-                        )}
-                      </select>
-                    </div>
-                    <div className="col-span-2">
-                      <label className="block text-sm font-medium text-gray-700 mb-1">API Key</label>
-                      <input
-                        type="password"
-                        value={aiSettings.apiKey}
-                        onChange={(e) => setAiSettings({ ...aiSettings, apiKey: e.target.value })}
-                        className="w-full border border-gray-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-primary-500"
-                        placeholder="Enter your API key"
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <div className="p-4 border border-gray-200 rounded-lg space-y-4">
-                  <h3 className="font-medium text-gray-900">Response Settings</h3>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Max Tokens</label>
-                      <input
-                        type="number"
-                        value={aiSettings.maxTokens}
-                        onChange={(e) => setAiSettings({ ...aiSettings, maxTokens: parseInt(e.target.value) })}
-                        className="w-full border border-gray-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-primary-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Temperature</label>
-                      <input
-                        type="number"
-                        step="0.1"
-                        min="0"
-                        max="1"
-                        value={aiSettings.temperature}
-                        onChange={(e) => setAiSettings({ ...aiSettings, temperature: parseFloat(e.target.value) })}
-                        className="w-full border border-gray-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-primary-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Confidence Threshold</label>
-                      <input
-                        type="number"
-                        step="0.1"
-                        min="0"
-                        max="1"
-                        value={aiSettings.confidenceThreshold}
-                        onChange={(e) => setAiSettings({ ...aiSettings, confidenceThreshold: parseFloat(e.target.value) })}
-                        className="w-full border border-gray-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-primary-500"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-4 p-4 bg-gray-50 rounded-lg">
-                    <div className="flex-1">
-                      <p className="font-medium text-gray-900">Auto-respond to customers</p>
-                      <p className="text-sm text-gray-500">AI will automatically respond to customer messages</p>
-                    </div>
-                    <label className="relative inline-flex items-center cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={aiSettings.autoResponse}
-                        onChange={(e) => setAiSettings({ ...aiSettings, autoResponse: e.target.checked })}
-                        className="sr-only peer"
-                      />
-                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-600"></div>
-                    </label>
-                  </div>
-                </div>
-
-                <div className="flex justify-end">
-                  <button
-                    onClick={handleSaveAiConfig}
-                    disabled={aiLoading}
-                    className="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50"
-                  >
-                    {aiLoading ? 'Saving...' : 'Save AI Configuration'}
-                  </button>
-                </div>
-
-                {/* Training Data Section */}
-                <div className="p-4 border border-gray-200 rounded-lg space-y-4">
-                  <h3 className="font-medium text-gray-900">Knowledge Base ({aiTrainingData.length} items)</h3>
-                  <p className="text-sm text-gray-500">Training data helps the AI provide better responses</p>
-
-                  {aiTrainingData.length > 0 && (
-                    <div className="max-h-48 overflow-y-auto space-y-2">
-                      {aiTrainingData.map((item) => (
-                        <div key={item.id} className="p-2 bg-gray-50 rounded text-sm">
-                          <p className="font-medium text-gray-900">{item.question}</p>
-                          <p className="text-gray-600 truncate">{item.answer}</p>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* Test AI Section */}
-                <div className="p-4 border border-gray-200 rounded-lg space-y-4">
-                  <h3 className="font-medium text-gray-900">Test AI Response</h3>
-
-                  <div>
-                    <input
-                      type="text"
-                      value={aiTestMessage}
-                      onChange={(e) => setAiTestMessage(e.target.value)}
-                      placeholder="Enter a test message..."
-                      className="w-full border border-gray-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-primary-500"
-                    />
-                  </div>
-
-                  <button
-                    onClick={handleTestAi}
-                    disabled={aiLoading || !aiTestMessage.trim()}
-                    className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50"
-                  >
-                    {aiLoading ? 'Testing...' : 'Test AI'}
-                  </button>
-
-                  {aiTestResponse && (
-                    <div className="p-3 bg-gray-50 rounded-lg">
-                      <p className="text-sm font-medium text-gray-700 mb-1">AI Response:</p>
-                      <p className="text-gray-900">{aiTestResponse}</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* General Settings Tab */}
-            {activeTab === 'general' && (
-              <div className="space-y-6">
-                <h2 className="text-lg font-semibold text-gray-900">General Settings</h2>
-
-                <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Company Name</label>
-                      <input
-                        type="text"
-                        value={settings.companyName}
-                        onChange={(e) => setSettings({ ...settings, companyName: e.target.value })}
-                        className="w-full border border-gray-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-primary-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Support Email</label>
-                      <input
-                        type="email"
-                        value={settings.supportEmail}
-                        onChange={(e) => setSettings({ ...settings, supportEmail: e.target.value })}
-                        className="w-full border border-gray-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-primary-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Default Response Time</label>
-                      <select
-                        value={settings.defaultResponseTime}
-                        onChange={(e) => setSettings({ ...settings, defaultResponseTime: e.target.value })}
-                        className="w-full border border-gray-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-primary-500"
-                      >
-                        <option>15 minutes</option>
-                        <option>30 minutes</option>
-                        <option>1 hour</option>
-                        <option>4 hours</option>
-                        <option>24 hours</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Working Hours</label>
-                      <input
-                        type="text"
-                        value={settings.workingHours}
-                        onChange={(e) => setSettings({ ...settings, workingHours: e.target.value })}
-                        className="w-full border border-gray-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-primary-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Timezone</label>
-                      <select
-                        value={settings.timezone}
-                        onChange={(e) => setSettings({ ...settings, timezone: e.target.value })}
-                        className="w-full border border-gray-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-primary-500"
-                      >
-                        <option value="America/New_York">Eastern Time (ET)</option>
-                        <option value="America/Chicago">Central Time (CT)</option>
-                        <option value="America/Los_Angeles">Pacific Time (PT)</option>
-                        <option value="Europe/London">London (GMT)</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Max Chats Per Agent</label>
-                      <input
-                        type="number"
-                        value={settings.maxChatsPerAgent}
-                        onChange={(e) => setSettings({ ...settings, maxChatsPerAgent: parseInt(e.target.value) })}
-                        className="w-full border border-gray-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-primary-500"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-4 p-4 bg-gray-50 rounded-lg">
-                    <div className="flex-1">
-                      <p className="font-medium text-gray-900">Auto-assign conversations</p>
-                      <p className="text-sm text-gray-500">Automatically assign new conversations to available agents</p>
-                    </div>
-                    <label className="relative inline-flex items-center cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={settings.autoAssignment}
-                        onChange={(e) => setSettings({ ...settings, autoAssignment: e.target.checked })}
-                        className="sr-only peer"
-                      />
-                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-600"></div>
-                    </label>
-                  </div>
-
-                  <div className="flex justify-end">
-                    <button className="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700">
-                      Save Settings
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Security Tab */}
-            {activeTab === 'security' && (
-              <div className="space-y-6">
-                <h2 className="text-lg font-semibold text-gray-900">Security Settings</h2>
-
-                <div className="space-y-4">
-                  <div className="p-4 border border-gray-200 rounded-lg">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="font-medium text-gray-900">Require 2FA for all users</p>
-                        <p className="text-sm text-gray-500">All team members must enable two-factor authentication</p>
-                      </div>
-                      <label className="relative inline-flex items-center cursor-pointer">
-                        <input type="checkbox" className="sr-only peer" />
-                        <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-600"></div>
-                      </label>
-                    </div>
-                  </div>
-
-                  <div className="p-4 border border-gray-200 rounded-lg">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="font-medium text-gray-900">Session timeout</p>
-                        <p className="text-sm text-gray-500">Automatically log out inactive users</p>
-                      </div>
-                      <select className="border border-gray-200 rounded-lg px-3 py-2">
-                        <option>30 minutes</option>
-                        <option>1 hour</option>
-                        <option>4 hours</option>
-                        <option>8 hours</option>
-                        <option>Never</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  <div className="p-4 border border-gray-200 rounded-lg">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="font-medium text-gray-900">IP Allowlist</p>
-                        <p className="text-sm text-gray-500">Restrict access to specific IP addresses</p>
-                      </div>
-                      <button className="px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-50">
-                        Configure
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* User Modal */}
-      {showUserModal && (
-        <UserModal
-          user={editingUser}
-          onClose={() => { setShowUserModal(false); setEditingUser(null); }}
-          onSave={handleSaveUser}
-        />
-      )}
-    </div>
-  );
-};
-
-interface UserModalProps {
-  user: User | null;
-  onClose: () => void;
-  onSave: (userData: Partial<User>) => void;
-}
-
-const UserModal: React.FC<UserModalProps> = ({ user, onClose, onSave }) => {
-  const [formData, setFormData] = useState({
-    name: user?.name || '',
-    email: user?.email || '',
-    role: user?.role || 'agent',
-    skills: user?.skills.join(', ') || '',
-    maxConcurrentChats: user?.maxConcurrentChats || 5,
-    password: '',
-  });
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    onSave({
-      ...formData,
-      skills: formData.skills.split(',').map(s => s.trim()).filter(Boolean),
-    });
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4">
-        <div className="p-4 border-b border-gray-100 flex items-center justify-between">
-          <h2 className="font-semibold text-gray-900">{user ? 'Edit User' : 'Add User'}</h2>
-          <button onClick={onClose} className="text-gray-500 hover:text-gray-700 text-2xl">×</button>
-        </div>
-        <form onSubmit={handleSubmit} className="p-4 space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
-            <input
-              type="text"
-              required
-              value={formData.name}
-              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-primary-500"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-            <input
-              type="email"
-              required
-              value={formData.email}
-              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-primary-500"
-            />
-          </div>
-          {!user && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
-              <input
-                type="password"
-                required={!user}
-                value={formData.password}
-                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-primary-500"
-              />
             </div>
-          )}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
-            <select
-              value={formData.role}
-              onChange={(e) => setFormData({ ...formData, role: e.target.value as User['role'] })}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-primary-500"
-              disabled={user?.role === 'owner'}
-            >
-              <option value="admin">Admin</option>
-              <option value="agent">Agent</option>
-              <option value="viewer">Viewer</option>
-            </select>
+            <div className="flex justify-end gap-2 mt-6">
+              <button onClick={() => { setShowRoleModal(false); resetRoleForm(); }} className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
+              <button onClick={handleSaveRole} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                {editingRole ? 'Save Changes' : 'Add Role'}
+              </button>
+            </div>
           </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Skills (comma separated)</label>
-            <input
-              type="text"
-              value={formData.skills}
-              onChange={(e) => setFormData({ ...formData, skills: e.target.value })}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-primary-500"
-              placeholder="billing, technical, sales"
-            />
+        </div>
+      )}
+
+      {/* Designation Modal */}
+      {showDesignationModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md">
+            <h3 className="text-lg font-semibold mb-4">{editingDesignation ? 'Edit Designation' : 'Add New Designation'}</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Designation Name *</label>
+                <input type="text" value={designationForm.name} onChange={e => setDesignationForm({...designationForm, name: e.target.value})}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2" placeholder="e.g., Senior Support Agent" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Department</label>
+                <input type="text" value={designationForm.department} onChange={e => setDesignationForm({...designationForm, department: e.target.value})}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2" placeholder="Support" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Level (1 = highest)</label>
+                <input type="number" min="1" max="10" value={designationForm.level} onChange={e => setDesignationForm({...designationForm, level: parseInt(e.target.value)})}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2" />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 mt-6">
+              <button onClick={() => { setShowDesignationModal(false); resetDesignationForm(); }} className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
+              <button onClick={handleSaveDesignation} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                {editingDesignation ? 'Save Changes' : 'Add Designation'}
+              </button>
+            </div>
           </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Max Concurrent Chats</label>
-            <input
-              type="number"
-              min="1"
-              max="20"
-              value={formData.maxConcurrentChats}
-              onChange={(e) => setFormData({ ...formData, maxConcurrentChats: parseInt(e.target.value) })}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-primary-500"
-            />
-          </div>
-          <div className="flex justify-end gap-2 pt-4">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-50"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700"
-            >
-              {user ? 'Save Changes' : 'Create User'}
-            </button>
-          </div>
-        </form>
-      </div>
+        </div>
+      )}
     </div>
   );
 };
