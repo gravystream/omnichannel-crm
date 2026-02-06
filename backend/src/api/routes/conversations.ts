@@ -15,8 +15,8 @@ router.get('/', async (req: Request, res: Response) => {
 
     let query = `
       SELECT
-        c.id,
-        c.customer_id as "customerId",
+        'conv_' || c.id::text as id,
+        'cust_' || c.customer_id::text as "customerId",
         c.channel,
         c.status,
         c.subject,
@@ -64,10 +64,12 @@ router.get('/', async (req: Request, res: Response) => {
 router.get('/:id', async (req: Request, res: Response) => {
   try {
     const pool = getPool();
+    // Handle both "conv_1" format and plain "1" format
+    const convId = req.params.id.replace('conv_', '');
     const result = await pool.query(
       `SELECT
-        c.id,
-        c.customer_id as "customerId",
+        'conv_' || c.id::text as id,
+        'cust_' || c.customer_id::text as "customerId",
         c.channel,
         c.status,
         c.subject,
@@ -80,7 +82,7 @@ router.get('/:id', async (req: Request, res: Response) => {
       FROM conversations c
       LEFT JOIN customers cu ON c.customer_id = cu.id
       WHERE c.id = $1`,
-      [req.params.id]
+      [convId]
     );
 
     if (result.rows.length === 0) {
@@ -104,11 +106,13 @@ router.get('/:id', async (req: Request, res: Response) => {
 router.get('/:id/messages', async (req: Request, res: Response) => {
   try {
     const pool = getPool();
+    // Handle both "conv_1" format and plain "1" format
+    const convId = req.params.id.replace('conv_', '');
 
     // First verify conversation exists
     const convResult = await pool.query(
       'SELECT id FROM conversations WHERE id = $1',
-      [req.params.id]
+      [convId]
     );
 
     if (convResult.rows.length === 0) {
@@ -121,8 +125,8 @@ router.get('/:id/messages', async (req: Request, res: Response) => {
     // Get messages
     const result = await pool.query(
       `SELECT
-        id,
-        conversation_id as "conversationId",
+        'msg_' || id::text as id,
+        'conv_' || conversation_id::text as "conversationId",
         content,
         sender_type as "senderType",
         sender_id as "senderId",
@@ -132,7 +136,7 @@ router.get('/:id/messages', async (req: Request, res: Response) => {
       FROM messages
       WHERE conversation_id = $1
       ORDER BY created_at ASC`,
-      [req.params.id]
+      [convId]
     );
 
     res.json({
@@ -153,6 +157,8 @@ router.post('/:id/messages', async (req: Request, res: Response) => {
   try {
     const pool = getPool();
     const { content } = req.body;
+    // Handle both "conv_1" format and plain "1" format
+    const convId = req.params.id.replace('conv_', '');
 
     if (!content || !content.trim()) {
       return res.status(400).json({
@@ -167,7 +173,7 @@ router.post('/:id/messages', async (req: Request, res: Response) => {
        FROM conversations c
        LEFT JOIN customers cu ON c.customer_id = cu.id
        WHERE c.id = $1`,
-      [req.params.id]
+      [convId]
     );
 
     if (convResult.rows.length === 0) {
@@ -219,7 +225,7 @@ router.post('/:id/messages', async (req: Request, res: Response) => {
        VALUES ($1, $2, $3, 'agent', 'system', $4, $5, NOW())`,
       [
         messageId,
-        req.params.id,
+        convId,
         content,
         conversation.channel,
         JSON.stringify({ sendSuccess: sendResult.success, sendError: sendResult.error })
@@ -229,12 +235,12 @@ router.post('/:id/messages', async (req: Request, res: Response) => {
     // Update conversation timestamp
     await pool.query(
       'UPDATE conversations SET updated_at = NOW() WHERE id = $1',
-      [req.params.id]
+      [convId]
     );
 
     const newMessage = {
-      id: messageId,
-      conversationId: req.params.id,
+      id: 'msg_' + messageId,
+      conversationId: 'conv_' + convId,
       content,
       senderType: 'agent',
       senderId: 'system',

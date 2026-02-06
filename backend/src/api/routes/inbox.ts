@@ -11,12 +11,12 @@ router.get('/', async (req: Request, res: Response) => {
 
     let query = `
       SELECT
-        c.id,
+        'conv_' || c.id::text as id,
         c.subject,
         c.channel,
         c.status,
         c.priority,
-        c.customer_id as "customerId",
+        'cust_' || c.customer_id::text as "customerId",
         c.created_at as "createdAt",
         c.updated_at as "updatedAt",
         cu.name as "customerName",
