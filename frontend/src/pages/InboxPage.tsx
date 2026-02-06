@@ -85,11 +85,11 @@ export const InboxPage: React.FC = () => {
       if (response.success && response.data) {
         setConversations(response.data);
       } else {
-        // Use mock data
-        setConversations(mockConversations);
+        setConversations([]);
       }
     } catch (error) {
-      setConversations(mockConversations);
+      console.error('Failed to fetch conversations:', error);
+      setConversations([]);
     } finally {
       setLoading(false);
     }
@@ -108,10 +108,11 @@ export const InboxPage: React.FC = () => {
       if (response.success && response.data) {
         setMessages(response.data);
       } else {
-        setMessages(mockMessages);
+        setMessages([]);
       }
     } catch (error) {
-      setMessages(mockMessages);
+      console.error('Failed to fetch messages:', error);
+      setMessages([]);
     }
   };
 
@@ -377,91 +378,5 @@ const ChatBubbleIcon: React.FC<{ className?: string }> = ({ className }) => (
     />
   </svg>
 );
-
-// Mock data
-const mockConversations: Conversation[] = [
-  {
-    id: 'conv_1',
-    customerId: 'cust_1',
-    channel: 'email',
-    status: 'open',
-    priority: 'high',
-    subject: 'Refund not processed after 5 days',
-    tags: ['billing', 'refund'],
-    lastMessageAt: new Date(Date.now() - 300000).toISOString(),
-    messageCount: 8,
-    createdAt: new Date(Date.now() - 86400000).toISOString(),
-    updatedAt: new Date(Date.now() - 300000).toISOString(),
-  },
-  {
-    id: 'conv_2',
-    customerId: 'cust_2',
-    channel: 'web_chat',
-    status: 'pending',
-    priority: 'normal',
-    subject: 'Cannot access premium features',
-    tags: ['technical', 'access'],
-    lastMessageAt: new Date(Date.now() - 600000).toISOString(),
-    messageCount: 4,
-    createdAt: new Date(Date.now() - 43200000).toISOString(),
-    updatedAt: new Date(Date.now() - 600000).toISOString(),
-  },
-  {
-    id: 'conv_3',
-    customerId: 'cust_3',
-    channel: 'whatsapp',
-    status: 'open',
-    priority: 'urgent',
-    subject: 'Service completely down',
-    tags: ['outage', 'p0'],
-    lastMessageAt: new Date(Date.now() - 60000).toISOString(),
-    messageCount: 15,
-    createdAt: new Date(Date.now() - 7200000).toISOString(),
-    updatedAt: new Date(Date.now() - 60000).toISOString(),
-  },
-];
-
-const mockMessages: Message[] = [
-  {
-    id: 'msg_1',
-    conversationId: 'conv_1',
-    direction: 'inbound',
-    senderType: 'customer',
-    content: 'Hi, I requested a refund 5 days ago but haven\'t received it yet. Order #12345.',
-    contentType: 'text',
-    attachments: [],
-    createdAt: new Date(Date.now() - 3600000).toISOString(),
-  },
-  {
-    id: 'msg_2',
-    conversationId: 'conv_1',
-    direction: 'outbound',
-    senderType: 'agent',
-    content: 'Hello! I apologize for the delay. Let me check the status of your refund right away.',
-    contentType: 'text',
-    attachments: [],
-    createdAt: new Date(Date.now() - 3500000).toISOString(),
-  },
-  {
-    id: 'msg_3',
-    conversationId: 'conv_1',
-    direction: 'outbound',
-    senderType: 'agent',
-    content: 'I found your order. The refund was processed but there seems to be a delay with your bank. It should arrive within 2-3 business days.',
-    contentType: 'text',
-    attachments: [],
-    createdAt: new Date(Date.now() - 3400000).toISOString(),
-  },
-  {
-    id: 'msg_4',
-    conversationId: 'conv_1',
-    direction: 'inbound',
-    senderType: 'customer',
-    content: 'Thanks for checking. I\'ll wait a couple more days then.',
-    contentType: 'text',
-    attachments: [],
-    createdAt: new Date(Date.now() - 300000).toISOString(),
-  },
-];
 
 export default InboxPage;
