@@ -1,6 +1,6 @@
 /**
  * Email Service
- * Service for sending emails via SMTP or other providers
+ * Service for sending emails via Zoho SMTP
  */
 
 import * as nodemailer from 'nodemailer';
@@ -36,10 +36,14 @@ class EmailService {
   private transporter: nodemailer.Transporter | null = null;
 
   constructor() {
+    // Default to Zoho SMTP settings
+    const port = parseInt(process.env.EMAIL_PORT || '465');
+
     this.config = {
-      host: process.env.EMAIL_HOST || '',
-      port: parseInt(process.env.EMAIL_PORT || '587'),
-      secure: process.env.EMAIL_SECURE === 'true',
+      host: process.env.EMAIL_HOST || 'smtp.zoho.com',
+      port: port,
+      // Zoho uses SSL on port 465, TLS on port 587
+      secure: process.env.EMAIL_SECURE ? process.env.EMAIL_SECURE === 'true' : port === 465,
       user: process.env.EMAIL_USER || '',
       password: process.env.EMAIL_PASSWORD || '',
       fromEmail: process.env.EMAIL_FROM || process.env.EMAIL_USER || '',
@@ -55,6 +59,14 @@ class EmailService {
       return;
     }
 
+    console.log('[EmailService] Initializing with Zoho SMTP:', {
+      host: this.config.host,
+      port: this.config.port,
+      secure: this.config.secure,
+      user: this.config.user,
+      from: this.config.fromEmail,
+    });
+
     this.transporter = nodemailer.createTransport({
       host: this.config.host,
       port: this.config.port,
@@ -62,6 +74,10 @@ class EmailService {
       auth: {
         user: this.config.user,
         pass: this.config.password,
+      },
+      // Zoho specific settings
+      tls: {
+        rejectUnauthorized: true,
       },
     });
   }
@@ -82,8 +98,11 @@ class EmailService {
     }
 
     try {
+      // For Zoho, the from email must match the authenticated user or an alias
+      const fromEmail = this.config.fromEmail || this.config.user;
+
       const mailOptions: nodemailer.SendMailOptions = {
-        from: `"${this.config.fromName}" <${this.config.fromEmail}>`,
+        from: `"${this.config.fromName}" <${fromEmail}>`,
         to: options.to,
         subject: options.subject,
         text: options.text,
@@ -94,6 +113,12 @@ class EmailService {
       if (options.bcc) mailOptions.bcc = options.bcc;
       if (options.replyTo) mailOptions.replyTo = options.replyTo;
       if (options.attachments) mailOptions.attachments = options.attachments;
+
+      console.log('[EmailService] Sending email via Zoho:', {
+        to: options.to,
+        subject: options.subject,
+        from: fromEmail,
+      });
 
       const result = await this.transporter.sendMail(mailOptions);
 
@@ -108,7 +133,7 @@ class EmailService {
         messageId: result.messageId,
       };
     } catch (error: any) {
-      console.error('[EmailService] Send error:', error);
+      console.error('[EmailService] Send error:', error.message);
       throw error;
     }
   }
@@ -123,10 +148,10 @@ class EmailService {
 
     try {
       await this.transporter.verify();
-      console.log('[EmailService] SMTP connection verified');
+      console.log('[EmailService] Zoho SMTP connection verified');
       return true;
     } catch (error: any) {
-      console.error('[EmailService] SMTP verification failed:', error);
+      console.error('[EmailService] Zoho SMTP verification failed:', error.message);
       return false;
     }
   }
