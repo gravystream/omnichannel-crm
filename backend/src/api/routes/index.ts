@@ -13,6 +13,7 @@ import adminRoutes from './admin';
 import aiRoutes from './ai';
 import integrationsRoutes from './integrations';
 import agentsRoutes from './agents';
+import inboxRoutes from './inbox';
 
 const router = Router();
 
@@ -27,5 +28,6 @@ router.use('/admin', adminRoutes);
 router.use('/ai', aiRoutes);
 router.use('/integrations', integrationsRoutes);
 router.use('/agents', agentsRoutes);
+router.use('/inbox', inboxRoutes);
 
 export default router;
