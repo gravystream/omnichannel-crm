@@ -130,11 +130,9 @@ router.get('/:id/messages', async (req: Request, res: Response) => {
         content,
         sender_type as "senderType",
         CASE WHEN sender_type = 'customer' THEN 'inbound' ELSE 'outbound' END as direction,
-        sender_id as "senderId",
         channel,
         'text' as "contentType",
         '[]'::jsonb as attachments,
-        metadata,
         created_at as "createdAt"
       FROM messages
       WHERE conversation_id = $1
@@ -224,8 +222,8 @@ router.post('/:id/messages', async (req: Request, res: Response) => {
 
     // Store the message in database regardless of send status
     await pool.query(
-      `INSERT INTO messages (id, conversation_id, content, sender_type, sender_id, channel, metadata, created_at)
-       VALUES ($1, $2, $3, 'agent', 'system', $4, $5, NOW())`,
+      `INSERT INTO messages (id, conversation_id, content, sender_type, channel, metadata, created_at)
+       VALUES ($1, $2, $3, 'agent', $4, $5, NOW())`,
       [
         messageId,
         convId,
@@ -249,7 +247,6 @@ router.post('/:id/messages', async (req: Request, res: Response) => {
       direction: 'outbound',
       contentType: 'text',
       attachments: [],
-      senderId: 'system',
       channel: conversation.channel,
       createdAt: new Date().toISOString(),
       sendSuccess: sendResult.success
