@@ -129,8 +129,11 @@ router.get('/:id/messages', async (req: Request, res: Response) => {
         'conv_' || conversation_id::text as "conversationId",
         content,
         sender_type as "senderType",
+        CASE WHEN sender_type = 'customer' THEN 'inbound' ELSE 'outbound' END as direction,
         sender_id as "senderId",
         channel,
+        'text' as "contentType",
+        '[]'::jsonb as attachments,
         metadata,
         created_at as "createdAt"
       FROM messages
@@ -243,6 +246,9 @@ router.post('/:id/messages', async (req: Request, res: Response) => {
       conversationId: 'conv_' + convId,
       content,
       senderType: 'agent',
+      direction: 'outbound',
+      contentType: 'text',
+      attachments: [],
       senderId: 'system',
       channel: conversation.channel,
       createdAt: new Date().toISOString(),
