@@ -25,7 +25,20 @@ const SettingsPage: React.FC = () => {
   ];
 
   useEffect(() => {
-    api.get('/api/v1/integrations').then(r => setIntegrations(r.data?.data || defaultIntegrations)).catch(() => setIntegrations(defaultIntegrations));
+    api.get('/api/v1/integrations')
+      .then(r => {
+        console.log('[Settings] Integrations API response:', r.data);
+        const data = r.data?.data || r.data;
+        if (Array.isArray(data) && data.length > 0) {
+          setIntegrations(data);
+        } else {
+          setIntegrations(defaultIntegrations);
+        }
+      })
+      .catch((err) => {
+        console.error('[Settings] Failed to fetch integrations:', err);
+        setIntegrations(defaultIntegrations);
+      });
   }, []);
 
   const loadGuide = async (id: string) => {
