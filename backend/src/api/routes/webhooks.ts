@@ -4,6 +4,84 @@
 
 import { Router, Request, Response } from 'express';
 import crypto from 'crypto';
+import { getPool } from '../../utils/database';
+import { v4 as uuidv4 } from 'uuid';
+
+// Helper function to find or create customer
+async function findOrCreateCustomer(pool: any, email: string | null, phone: string | null, name: string | null) {
+  // Try to find existing customer by email or phone
+  let customer = null;
+
+  if (email) {
+    const result = await pool.query('SELECT * FROM customers WHERE email = $1', [email]);
+    if (result.rows.length > 0) customer = result.rows[0];
+  }
+
+  if (!customer && phone) {
+    const result = await pool.query('SELECT * FROM customers WHERE phone = $1', [phone]);
+    if (result.rows.length > 0) customer = result.rows[0];
+  }
+
+  // Create new customer if not found
+  if (!customer) {
+    const customerId = uuidv4();
+    const result = await pool.query(
+      `INSERT INTO customers (id, email, phone, name, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, NOW(), NOW())
+       RETURNING *`,
+      [customerId, email, phone, name || 'Unknown']
+    );
+    customer = result.rows[0];
+    console.log('[Webhook] Created new customer:', customer.id);
+  }
+
+  return customer;
+}
+
+// Helper function to find or create conversation
+async function findOrCreateConversation(pool: any, customerId: string, channel: string, subject: string | null) {
+  // Try to find existing open conversation for this customer and channel
+  const result = await pool.query(
+    `SELECT * FROM conversations
+     WHERE customer_id = $1 AND channel = $2 AND status IN ('open', 'pending')
+     ORDER BY updated_at DESC LIMIT 1`,
+    [customerId, channel]
+  );
+
+  if (result.rows.length > 0) {
+    return result.rows[0];
+  }
+
+  // Create new conversation
+  const convId = uuidv4();
+  const newConv = await pool.query(
+    `INSERT INTO conversations (id, customer_id, channel, status, subject, priority, created_at, updated_at)
+     VALUES ($1, $2, $3, 'open', $4, 'normal', NOW(), NOW())
+     RETURNING *`,
+    [convId, customerId, channel, subject || `${channel.charAt(0).toUpperCase() + channel.slice(1)} Inquiry`]
+  );
+  console.log('[Webhook] Created new conversation:', newConv.rows[0].id);
+  return newConv.rows[0];
+}
+
+// Helper function to create message
+async function createMessage(pool: any, conversationId: string, content: string, senderType: string, channel: string) {
+  const messageId = uuidv4();
+  await pool.query(
+    `INSERT INTO messages (id, conversation_id, content, sender_type, channel, created_at)
+     VALUES ($1, $2, $3, $4, $5, NOW())`,
+    [messageId, conversationId, content, senderType, channel]
+  );
+
+  // Update conversation timestamp
+  await pool.query(
+    'UPDATE conversations SET updated_at = NOW() WHERE id = $1',
+    [conversationId]
+  );
+
+  console.log('[Webhook] Created message:', messageId);
+  return messageId;
+}
 
 const router = Router();
 
@@ -114,59 +192,164 @@ router.post('/slack/interactive', verifySlackSignature, (req: Request, res: Resp
 });
 
 // POST /api/webhooks/email/sendgrid
-router.post('/email/sendgrid', (req: Request, res: Response) => {
-  // SendGrid Inbound Parse webhook
-  const {
-    from,
-    to,
-    subject,
-    text,
-    html,
-    headers,
-    attachments
-  } = req.body;
+router.post('/email/sendgrid', async (req: Request, res: Response) => {
+  try {
+    const pool = getPool();
+    const {
+      from,
+      to,
+      subject,
+      text,
+      html,
+      headers,
+      attachments
+    } = req.body;
 
-  console.log('Email received from SendGrid:', { from, to, subject });
+    const fromEmail = typeof from === 'string' ? from : from?.email;
+    const fromName = typeof from === 'string' ? from.split('@')[0] : from?.name;
 
-  // Extract thread ID from subject or headers
-  let threadId = null;
-  const reMatch = subject?.match(/\[Thread:([^\]]+)\]/);
-  if (reMatch) {
-    threadId = reMatch[1];
+    console.log('Email received from SendGrid:', { from: fromEmail, to, subject });
+
+    // Create or find customer
+    const customer = await findOrCreateCustomer(pool, fromEmail, null, fromName);
+
+    // Create or find conversation
+    const conversation = await findOrCreateConversation(pool, customer.id, 'email', subject);
+
+    // Create message
+    const content = text || html || '(No content)';
+    await createMessage(pool, conversation.id, content, 'customer', 'email');
+
+    console.log('[Email Webhook] Processed email into conversation:', conversation.id);
+
+    res.json({ success: true, message: 'Email processed', conversationId: conversation.id });
+  } catch (error: any) {
+    console.error('[Email Webhook] Error:', error);
+    res.status(500).json({ success: false, error: error.message });
   }
-
-  // In production: create or continue conversation
-  const emailData = {
-    from: typeof from === 'string' ? from : from?.email,
-    to: typeof to === 'string' ? to : to?.email,
-    subject,
-    body: text || html,
-    threadId,
-    hasAttachments: !!attachments,
-    receivedAt: new Date().toISOString()
-  };
-
-  console.log('Processed email:', emailData);
-
-  res.json({ success: true, message: 'Email processed' });
 });
 
 // POST /api/webhooks/email/mailgun
-router.post('/email/mailgun', (req: Request, res: Response) => {
-  // Mailgun webhook
-  const {
-    sender,
-    recipient,
-    subject,
-    'body-plain': bodyPlain,
-    'body-html': bodyHtml,
-    'Message-Id': messageId,
-    'In-Reply-To': inReplyTo
-  } = req.body;
+router.post('/email/mailgun', async (req: Request, res: Response) => {
+  try {
+    const pool = getPool();
+    const {
+      sender,
+      recipient,
+      subject,
+      'body-plain': bodyPlain,
+      'body-html': bodyHtml,
+      'Message-Id': messageId,
+      'In-Reply-To': inReplyTo
+    } = req.body;
 
-  console.log('Email received from Mailgun:', { sender, recipient, subject });
+    console.log('Email received from Mailgun:', { sender, recipient, subject });
 
-  res.json({ success: true, message: 'Email processed' });
+    // Create or find customer
+    const customer = await findOrCreateCustomer(pool, sender, null, sender?.split('@')[0]);
+
+    // Create or find conversation
+    const conversation = await findOrCreateConversation(pool, customer.id, 'email', subject);
+
+    // Create message
+    const content = bodyPlain || bodyHtml || '(No content)';
+    await createMessage(pool, conversation.id, content, 'customer', 'email');
+
+    res.json({ success: true, message: 'Email processed', conversationId: conversation.id });
+  } catch (error: any) {
+    console.error('[Mailgun Webhook] Error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// POST /api/webhooks/email/zoho - Zoho Mail webhook
+router.post('/email/zoho', async (req: Request, res: Response) => {
+  try {
+    const pool = getPool();
+    const {
+      fromAddress,
+      from,
+      toAddress,
+      to,
+      subject,
+      content,
+      textContent,
+      htmlContent,
+      sender,
+      receivedTime
+    } = req.body;
+
+    const fromEmail = fromAddress || from || sender;
+    const fromName = fromEmail?.split('@')[0];
+    const emailContent = content || textContent || htmlContent || '(No content)';
+
+    console.log('Email received from Zoho:', { from: fromEmail, to: toAddress || to, subject });
+
+    // Create or find customer
+    const customer = await findOrCreateCustomer(pool, fromEmail, null, fromName);
+
+    // Create or find conversation
+    const conversation = await findOrCreateConversation(pool, customer.id, 'email', subject);
+
+    // Create message
+    await createMessage(pool, conversation.id, emailContent, 'customer', 'email');
+
+    console.log('[Zoho Email Webhook] Processed email into conversation:', conversation.id);
+
+    res.json({ success: true, message: 'Email processed', conversationId: conversation.id });
+  } catch (error: any) {
+    console.error('[Zoho Email Webhook] Error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// POST /api/webhooks/email - Generic email webhook (works with any provider)
+router.post('/email', async (req: Request, res: Response) => {
+  try {
+    const pool = getPool();
+    const {
+      from,
+      fromAddress,
+      fromEmail,
+      sender,
+      to,
+      toAddress,
+      subject,
+      text,
+      textContent,
+      body,
+      content,
+      html,
+      htmlContent
+    } = req.body;
+
+    const email = from || fromAddress || fromEmail || sender;
+    const name = email?.split('@')[0];
+    const emailContent = text || textContent || body || content || html || htmlContent || '(No content)';
+    const emailSubject = subject || 'Email Inquiry';
+
+    console.log('Email received (generic):', { from: email, subject: emailSubject });
+
+    if (!email) {
+      return res.status(400).json({ success: false, error: 'Missing from/sender email address' });
+    }
+
+    // Create or find customer
+    const customer = await findOrCreateCustomer(pool, email, null, name);
+
+    // Create or find conversation
+    const conversation = await findOrCreateConversation(pool, customer.id, 'email', emailSubject);
+
+    // Create message
+    await createMessage(pool, conversation.id, emailContent, 'customer', 'email');
+
+    console.log('[Email Webhook] Processed email into conversation:', conversation.id);
+
+    res.json({ success: true, message: 'Email processed', conversationId: conversation.id });
+  } catch (error: any) {
+    console.error('[Email Webhook] Error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
 });
 
 // GET/POST /api/webhooks/whatsapp
@@ -186,7 +369,7 @@ router.get('/whatsapp', (req: Request, res: Response) => {
   res.status(403).send('Verification failed');
 });
 
-router.post('/whatsapp', (req: Request, res: Response) => {
+router.post('/whatsapp', async (req: Request, res: Response) => {
   const { object, entry } = req.body;
 
   if (object !== 'whatsapp_business_account') {
@@ -195,37 +378,55 @@ router.post('/whatsapp', (req: Request, res: Response) => {
 
   console.log('WhatsApp webhook received');
 
-  entry?.forEach((e: any) => {
-    e.changes?.forEach((change: any) => {
-      if (change.field === 'messages') {
-        const messages = change.value?.messages || [];
-        const contacts = change.value?.contacts || [];
+  try {
+    const pool = getPool();
 
-        messages.forEach((msg: any) => {
-          const contact = contacts.find((c: any) => c.wa_id === msg.from);
-          console.log('WhatsApp message:', {
-            from: msg.from,
-            contactName: contact?.profile?.name,
-            type: msg.type,
-            text: msg.text?.body || msg.type,
-            timestamp: msg.timestamp
+    for (const e of entry || []) {
+      for (const change of e.changes || []) {
+        if (change.field === 'messages') {
+          const messages = change.value?.messages || [];
+          const contacts = change.value?.contacts || [];
+
+          for (const msg of messages) {
+            const contact = contacts.find((c: any) => c.wa_id === msg.from);
+            const phone = '+' + msg.from;
+            const name = contact?.profile?.name || 'WhatsApp User';
+            const content = msg.text?.body || msg.caption || `[${msg.type}]`;
+
+            console.log('WhatsApp message:', {
+              from: phone,
+              contactName: name,
+              type: msg.type,
+              text: content
+            });
+
+            // Create or find customer
+            const customer = await findOrCreateCustomer(pool, null, phone, name);
+
+            // Create or find conversation
+            const conversation = await findOrCreateConversation(pool, customer.id, 'whatsapp', 'WhatsApp Inquiry');
+
+            // Create message
+            await createMessage(pool, conversation.id, content, 'customer', 'whatsapp');
+
+            console.log('[WhatsApp Webhook] Processed message into conversation:', conversation.id);
+          }
+
+          // Handle status updates
+          const statuses = change.value?.statuses || [];
+          statuses.forEach((status: any) => {
+            console.log('WhatsApp status:', {
+              messageId: status.id,
+              status: status.status,
+              recipientId: status.recipient_id
+            });
           });
-
-          // In production: create or continue conversation
-        });
-
-        // Handle status updates
-        const statuses = change.value?.statuses || [];
-        statuses.forEach((status: any) => {
-          console.log('WhatsApp status:', {
-            messageId: status.id,
-            status: status.status, // sent, delivered, read
-            recipientId: status.recipient_id
-          });
-        });
+        }
       }
-    });
-  });
+    }
+  } catch (error: any) {
+    console.error('[WhatsApp Webhook] Error:', error);
+  }
 
   res.sendStatus(200);
 });
