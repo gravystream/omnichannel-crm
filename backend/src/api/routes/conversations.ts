@@ -20,11 +20,18 @@ router.get('/', async (req: Request, res: Response) => {
         c.channel,
         c.status,
         c.subject,
-        c.priority,
+        COALESCE(c.priority, 'normal') as priority,
         c.created_at as "createdAt",
         c.updated_at as "updatedAt",
         cu.name as "customerName",
-        cu.email as "customerEmail"
+        cu.email as "customerEmail",
+        cu.phone as "customerPhone",
+        (SELECT content FROM messages WHERE conversation_id = c.id ORDER BY created_at DESC LIMIT 1) as "lastMessage",
+        COALESCE(
+          (SELECT created_at FROM messages WHERE conversation_id = c.id ORDER BY created_at DESC LIMIT 1),
+          c.updated_at
+        ) as "lastMessageAt",
+        COALESCE((SELECT COUNT(*)::int FROM messages WHERE conversation_id = c.id), 0) as "messageCount"
       FROM conversations c
       LEFT JOIN customers cu ON c.customer_id = cu.id
       WHERE 1=1
