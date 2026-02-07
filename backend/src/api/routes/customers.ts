@@ -1,292 +1,396 @@
 /**
- * Customer Routes
+ * Customer Routes - PostgreSQL Connected
  */
 
 import { Router, Request, Response } from 'express';
-import { v4 as uuidv4 } from 'uuid';
+import { getPool } from '../../utils/database';
 
 const router = Router();
 
-// In-memory storage for demo
-const customers = new Map<string, any>();
+// GET /api/customers - List all customers from PostgreSQL
+router.get('/', async (req: Request, res: Response) => {
+  try {
+    const pool = getPool();
+    const { search, tier, segment, page = '1', pageSize = '20' } = req.query;
 
-// Initialize sample customers
-function initSampleCustomers() {
-  const cust1 = {
-    id: 'cust_1',
-    externalId: 'ext_johndoe_123',
-    email: 'john@example.com',
-    phone: '+1234567890',
-    name: 'John Doe',
-    avatarUrl: null,
-    company: 'Acme Corp',
-    tier: 'standard',
-    metadata: {
-      accountAge: '2 years',
-      plan: 'pro',
-      lastPurchase: '2024-01-10'
+    const conditions: string[] = [];
+    const values: any[] = [];
+    let paramIndex = 1;
+
+    // Search filter
+    if (search) {
+      conditions.push(`(name ILIKE $${paramIndex} OR email ILIKE $${paramIndex} OR phone ILIKE $${paramIndex})`);
+      values.push(`%${search}%`);
+      paramIndex++;
+    }
+
+    // Tier filter (maps to sla_tier in frontend)
+    if (tier) {
+      conditions.push(`COALESCE(metadata->>'tier', 'standard') = $${paramIndex}`);
+      values.push(tier);
+      paramIndex++;
+    }
+
+    // Segment filter
+    if (segment) {
+      conditions.push(`metadata->>'segment' = $${paramIndex}`);
+      values.push(segment);
+      paramIndex++;
+    }
+
+    const whereClause = conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : '';
+
+    // Count total
+    const countResult = await pool.query(`SELECT COUNT(*) FROM customers ${whereClause}`, values);
+    const total = parseInt(countResult.rows[0].count, 10);
+
+    // Pagination
+    const pageNum = parseInt(page as string, 10);
+    const size = parseInt(pageSize as string, 10);
+    const offset = (pageNum - 1) * size;
+
+    // Fetch customers with conversation stats
+    const dataQuery = `
+      SELECT
+        c.*,
+        COALESCE((SELECT COUNT(*) FROM conversations WHERE customer_id = c.id), 0) as total_conversations,
+        COALESCE((SELECT COUNT(*) FROM conversations WHERE customer_id = c.id AND status IN ('open', 'pending')), 0) as open_conversations
+      FROM customers c
+      ${whereClause}
+      ORDER BY c.updated_at DESC
+      LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
+    `;
+    values.push(size, offset);
+
+    const result = await pool.query(dataQuery, values);
+
+    // Map to frontend Customer format
+    const customers = result.rows.map(mapCustomerRow);
+
+    res.json({
+      success: true,
+      data: customers,
+      pagination: {
+        page: pageNum,
+        pageSize: size,
+        totalItems: total,
+        totalPages: Math.ceil(total / size)
+      }
+    });
+  } catch (error: any) {
+    console.error('[Customers] Error fetching customers:', error);
+    res.status(500).json({
+      success: false,
+      error: { code: 'FETCH_ERROR', message: error.message }
+    });
+  }
+});
+
+// GET /api/customers/:id - Get single customer
+router.get('/:id', async (req: Request, res: Response) => {
+  try {
+    const pool = getPool();
+    let customerId = req.params.id;
+
+    // Handle cust_X format
+    if (customerId.startsWith('cust_')) {
+      customerId = customerId.replace('cust_', '');
+    }
+
+    const result = await pool.query(`
+      SELECT
+        c.*,
+        COALESCE((SELECT COUNT(*) FROM conversations WHERE customer_id = c.id), 0) as total_conversations,
+        COALESCE((SELECT COUNT(*) FROM conversations WHERE customer_id = c.id AND status IN ('open', 'pending')), 0) as open_conversations
+      FROM customers c
+      WHERE c.id = $1 OR c.id::text = $2
+    `, [parseInt(customerId) || 0, customerId]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: { code: 'NOT_FOUND', message: 'Customer not found' }
+      });
+    }
+
+    res.json({
+      success: true,
+      data: mapCustomerRow(result.rows[0])
+    });
+  } catch (error: any) {
+    console.error('[Customers] Error fetching customer:', error);
+    res.status(500).json({
+      success: false,
+      error: { code: 'FETCH_ERROR', message: error.message }
+    });
+  }
+});
+
+// POST /api/customers - Create new customer
+router.post('/', async (req: Request, res: Response) => {
+  try {
+    const pool = getPool();
+    const { email, phone, name, company, tier, metadata } = req.body;
+
+    const result = await pool.query(`
+      INSERT INTO customers (email, phone, name, metadata, created_at, updated_at)
+      VALUES ($1, $2, $3, $4, NOW(), NOW())
+      RETURNING *
+    `, [
+      email || null,
+      phone || null,
+      name || 'Unknown Customer',
+      JSON.stringify({
+        company: company || null,
+        tier: tier || 'standard',
+        ...metadata
+      })
+    ]);
+
+    res.status(201).json({
+      success: true,
+      data: mapCustomerRow(result.rows[0])
+    });
+  } catch (error: any) {
+    console.error('[Customers] Error creating customer:', error);
+    res.status(500).json({
+      success: false,
+      error: { code: 'CREATE_ERROR', message: error.message }
+    });
+  }
+});
+
+// PATCH /api/customers/:id - Update customer
+router.patch('/:id', async (req: Request, res: Response) => {
+  try {
+    const pool = getPool();
+    let customerId = req.params.id;
+
+    if (customerId.startsWith('cust_')) {
+      customerId = customerId.replace('cust_', '');
+    }
+
+    const { email, phone, name, company, tier, metadata } = req.body;
+
+    const sets: string[] = [];
+    const values: any[] = [];
+    let paramIndex = 1;
+
+    if (email !== undefined) { sets.push(`email = $${paramIndex++}`); values.push(email); }
+    if (phone !== undefined) { sets.push(`phone = $${paramIndex++}`); values.push(phone); }
+    if (name !== undefined) { sets.push(`name = $${paramIndex++}`); values.push(name); }
+
+    // Handle metadata updates
+    if (company !== undefined || tier !== undefined || metadata !== undefined) {
+      sets.push(`metadata = COALESCE(metadata, '{}'::jsonb) || $${paramIndex++}::jsonb`);
+      values.push(JSON.stringify({
+        ...(company !== undefined ? { company } : {}),
+        ...(tier !== undefined ? { tier } : {}),
+        ...metadata
+      }));
+    }
+
+    sets.push(`updated_at = NOW()`);
+
+    if (sets.length === 1) {
+      // Only updated_at, fetch and return current
+      const result = await pool.query('SELECT * FROM customers WHERE id = $1 OR id::text = $2',
+        [parseInt(customerId) || 0, customerId]);
+      if (result.rows.length === 0) {
+        return res.status(404).json({
+          success: false,
+          error: { code: 'NOT_FOUND', message: 'Customer not found' }
+        });
+      }
+      return res.json({ success: true, data: mapCustomerRow(result.rows[0]) });
+    }
+
+    values.push(parseInt(customerId) || 0);
+    values.push(customerId);
+
+    const result = await pool.query(`
+      UPDATE customers
+      SET ${sets.join(', ')}
+      WHERE id = $${paramIndex} OR id::text = $${paramIndex + 1}
+      RETURNING *
+    `, values);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: { code: 'NOT_FOUND', message: 'Customer not found' }
+      });
+    }
+
+    res.json({
+      success: true,
+      data: mapCustomerRow(result.rows[0])
+    });
+  } catch (error: any) {
+    console.error('[Customers] Error updating customer:', error);
+    res.status(500).json({
+      success: false,
+      error: { code: 'UPDATE_ERROR', message: error.message }
+    });
+  }
+});
+
+// GET /api/customers/:id/conversations - Get customer's conversations
+router.get('/:id/conversations', async (req: Request, res: Response) => {
+  try {
+    const pool = getPool();
+    let customerId = req.params.id;
+
+    if (customerId.startsWith('cust_')) {
+      customerId = customerId.replace('cust_', '');
+    }
+
+    const result = await pool.query(`
+      SELECT
+        'conv_' || id::text as id,
+        'cust_' || customer_id::text as "customerId",
+        channel,
+        status,
+        COALESCE(priority, 'normal') as priority,
+        subject,
+        created_at as "createdAt",
+        updated_at as "updatedAt"
+      FROM conversations
+      WHERE customer_id = $1 OR customer_id::text = $2
+      ORDER BY updated_at DESC
+    `, [parseInt(customerId) || 0, customerId]);
+
+    res.json({
+      success: true,
+      data: result.rows,
+      pagination: {
+        page: 1,
+        pageSize: 20,
+        totalItems: result.rows.length,
+        totalPages: Math.ceil(result.rows.length / 20)
+      }
+    });
+  } catch (error: any) {
+    console.error('[Customers] Error fetching conversations:', error);
+    res.status(500).json({
+      success: false,
+      error: { code: 'FETCH_ERROR', message: error.message }
+    });
+  }
+});
+
+// POST /api/customers/:id/merge - Merge two customers
+router.post('/:id/merge', async (req: Request, res: Response) => {
+  try {
+    const pool = getPool();
+    let primaryId = req.params.id;
+    let { mergeCustomerId } = req.body;
+
+    if (primaryId.startsWith('cust_')) primaryId = primaryId.replace('cust_', '');
+    if (mergeCustomerId?.startsWith('cust_')) mergeCustomerId = mergeCustomerId.replace('cust_', '');
+
+    // Get both customers
+    const primaryResult = await pool.query('SELECT * FROM customers WHERE id = $1 OR id::text = $2',
+      [parseInt(primaryId) || 0, primaryId]);
+    const secondaryResult = await pool.query('SELECT * FROM customers WHERE id = $1 OR id::text = $2',
+      [parseInt(mergeCustomerId) || 0, mergeCustomerId]);
+
+    if (primaryResult.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: { code: 'NOT_FOUND', message: 'Primary customer not found' }
+      });
+    }
+
+    if (secondaryResult.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: { code: 'NOT_FOUND', message: 'Secondary customer not found' }
+      });
+    }
+
+    const primary = primaryResult.rows[0];
+    const secondary = secondaryResult.rows[0];
+
+    // Merge metadata
+    const mergedMetadata = { ...secondary.metadata, ...primary.metadata };
+
+    // Update primary customer with merged data
+    await pool.query(`
+      UPDATE customers SET
+        email = COALESCE($1, email),
+        phone = COALESCE($2, phone),
+        metadata = $3,
+        updated_at = NOW()
+      WHERE id = $4
+    `, [
+      primary.email || secondary.email,
+      primary.phone || secondary.phone,
+      JSON.stringify(mergedMetadata),
+      primary.id
+    ]);
+
+    // Move conversations from secondary to primary
+    await pool.query('UPDATE conversations SET customer_id = $1 WHERE customer_id = $2',
+      [primary.id, secondary.id]);
+
+    // Delete secondary customer
+    await pool.query('DELETE FROM customers WHERE id = $1', [secondary.id]);
+
+    // Fetch updated primary customer
+    const updatedResult = await pool.query(`
+      SELECT
+        c.*,
+        COALESCE((SELECT COUNT(*) FROM conversations WHERE customer_id = c.id), 0) as total_conversations,
+        COALESCE((SELECT COUNT(*) FROM conversations WHERE customer_id = c.id AND status IN ('open', 'pending')), 0) as open_conversations
+      FROM customers c
+      WHERE c.id = $1
+    `, [primary.id]);
+
+    res.json({
+      success: true,
+      data: mapCustomerRow(updatedResult.rows[0])
+    });
+  } catch (error: any) {
+    console.error('[Customers] Error merging customers:', error);
+    res.status(500).json({
+      success: false,
+      error: { code: 'MERGE_ERROR', message: error.message }
+    });
+  }
+});
+
+// Helper function to map database row to frontend Customer format
+function mapCustomerRow(row: any): any {
+  const metadata = typeof row.metadata === 'string' ? JSON.parse(row.metadata) : (row.metadata || {});
+
+  return {
+    id: 'cust_' + row.id,
+    name: row.name || 'Unknown',
+    identityGraph: {
+      emails: row.email ? [row.email] : [],
+      phoneNumbers: row.phone ? [row.phone] : [],
+      socialIds: {}
     },
-    channelIdentities: [
-      { channel: 'web_chat', identifier: 'session_abc123' },
-      { channel: 'email', identifier: 'john@example.com' }
-    ],
-    conversationCount: 5,
-    totalMessageCount: 42,
-    firstContactAt: new Date(Date.now() - 730 * 24 * 60 * 60 * 1000).toISOString(),
-    lastContactAt: new Date(Date.now() - 10 * 60 * 1000).toISOString(),
-    createdAt: new Date(Date.now() - 730 * 24 * 60 * 60 * 1000).toISOString(),
-    updatedAt: new Date().toISOString()
-  };
-
-  const cust2 = {
-    id: 'cust_2',
-    externalId: 'ext_janesmith_456',
-    email: 'jane@example.com',
-    phone: '+0987654321',
-    name: 'Jane Smith',
-    avatarUrl: null,
-    company: 'Tech Startup Inc',
-    tier: 'standard',
-    metadata: {
-      accountAge: '6 months',
-      plan: 'starter'
+    profile: {
+      name: row.name || 'Unknown',
+      company: metadata.company || null,
+      title: metadata.title || null,
+      location: metadata.location || null
     },
-    channelIdentities: [
-      { channel: 'email', identifier: 'jane@example.com' }
-    ],
-    conversationCount: 2,
-    totalMessageCount: 8,
-    firstContactAt: new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString(),
-    lastContactAt: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
-    createdAt: new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString(),
-    updatedAt: new Date().toISOString()
-  };
-
-  const cust3 = {
-    id: 'cust_3',
-    externalId: 'ext_bobwilson_789',
-    email: 'bob@enterprise.com',
-    phone: '+1555123456',
-    name: 'Bob Wilson',
-    avatarUrl: null,
-    company: 'Enterprise Global Ltd',
-    tier: 'enterprise',
-    metadata: {
-      accountAge: '5 years',
-      plan: 'enterprise',
-      accountManager: 'Sarah',
-      annualContractValue: 50000
+    slaTier: metadata.tier || 'standard',
+    tags: metadata.tags || [],
+    segments: metadata.segments || [],
+    customFields: metadata.customFields || {},
+    stats: {
+      totalConversations: parseInt(row.total_conversations) || 0,
+      openConversations: parseInt(row.open_conversations) || 0,
+      avgResolutionTime: metadata.avgResolutionTime || 0,
+      satisfaction: metadata.satisfaction || 0
     },
-    channelIdentities: [
-      { channel: 'whatsapp', identifier: '+1555123456' },
-      { channel: 'email', identifier: 'bob@enterprise.com' }
-    ],
-    conversationCount: 15,
-    totalMessageCount: 234,
-    firstContactAt: new Date(Date.now() - 1825 * 24 * 60 * 60 * 1000).toISOString(),
-    lastContactAt: new Date(Date.now() - 45 * 60 * 1000).toISOString(),
-    createdAt: new Date(Date.now() - 1825 * 24 * 60 * 60 * 1000).toISOString(),
-    updatedAt: new Date().toISOString()
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
   };
-
-  customers.set(cust1.id, cust1);
-  customers.set(cust2.id, cust2);
-  customers.set(cust3.id, cust3);
 }
-
-initSampleCustomers();
-
-// GET /api/customers
-router.get('/', (req: Request, res: Response) => {
-  const { search, tier, page = '1', pageSize = '20' } = req.query;
-
-  let result = Array.from(customers.values());
-
-  // Search filter
-  if (search) {
-    const searchLower = (search as string).toLowerCase();
-    result = result.filter(c =>
-      c.name.toLowerCase().includes(searchLower) ||
-      c.email.toLowerCase().includes(searchLower) ||
-      (c.company && c.company.toLowerCase().includes(searchLower))
-    );
-  }
-
-  // Tier filter
-  if (tier) {
-    result = result.filter(c => c.tier === tier);
-  }
-
-  // Sort by last contact
-  result.sort((a, b) => new Date(b.lastContactAt).getTime() - new Date(a.lastContactAt).getTime());
-
-  // Pagination
-  const pageNum = parseInt(page as string, 10);
-  const size = parseInt(pageSize as string, 10);
-  const start = (pageNum - 1) * size;
-  const paginatedResult = result.slice(start, start + size);
-
-  res.json({
-    success: true,
-    data: paginatedResult,
-    pagination: {
-      page: pageNum,
-      pageSize: size,
-      totalItems: result.length,
-      totalPages: Math.ceil(result.length / size)
-    }
-  });
-});
-
-// GET /api/customers/:id
-router.get('/:id', (req: Request, res: Response) => {
-  const customer = customers.get(req.params.id);
-
-  if (!customer) {
-    return res.status(404).json({
-      success: false,
-      error: { code: 'NOT_FOUND', message: 'Customer not found' }
-    });
-  }
-
-  res.json({
-    success: true,
-    data: customer
-  });
-});
-
-// POST /api/customers
-router.post('/', (req: Request, res: Response) => {
-  const { email, phone, name, company, tier, metadata, channelIdentities } = req.body;
-
-  const id = `cust_${uuidv4().slice(0, 8)}`;
-  const now = new Date().toISOString();
-
-  const customer = {
-    id,
-    externalId: null,
-    email: email || null,
-    phone: phone || null,
-    name: name || 'Unknown Customer',
-    avatarUrl: null,
-    company: company || null,
-    tier: tier || 'standard',
-    metadata: metadata || {},
-    channelIdentities: channelIdentities || [],
-    conversationCount: 0,
-    totalMessageCount: 0,
-    firstContactAt: now,
-    lastContactAt: now,
-    createdAt: now,
-    updatedAt: now
-  };
-
-  customers.set(id, customer);
-
-  res.status(201).json({
-    success: true,
-    data: customer
-  });
-});
-
-// PATCH /api/customers/:id
-router.patch('/:id', (req: Request, res: Response) => {
-  const customer = customers.get(req.params.id);
-
-  if (!customer) {
-    return res.status(404).json({
-      success: false,
-      error: { code: 'NOT_FOUND', message: 'Customer not found' }
-    });
-  }
-
-  const { email, phone, name, company, tier, metadata } = req.body;
-
-  if (email !== undefined) customer.email = email;
-  if (phone !== undefined) customer.phone = phone;
-  if (name !== undefined) customer.name = name;
-  if (company !== undefined) customer.company = company;
-  if (tier !== undefined) customer.tier = tier;
-  if (metadata !== undefined) customer.metadata = { ...customer.metadata, ...metadata };
-  customer.updatedAt = new Date().toISOString();
-
-  res.json({
-    success: true,
-    data: customer
-  });
-});
-
-// GET /api/customers/:id/conversations
-router.get('/:id/conversations', (req: Request, res: Response) => {
-  const customer = customers.get(req.params.id);
-
-  if (!customer) {
-    return res.status(404).json({
-      success: false,
-      error: { code: 'NOT_FOUND', message: 'Customer not found' }
-    });
-  }
-
-  // Return empty array for now - in real app would query conversations
-  res.json({
-    success: true,
-    data: [],
-    pagination: {
-      page: 1,
-      pageSize: 20,
-      totalItems: 0,
-      totalPages: 0
-    }
-  });
-});
-
-// POST /api/customers/:id/merge
-router.post('/:id/merge', (req: Request, res: Response) => {
-  const primaryCustomer = customers.get(req.params.id);
-  const { mergeCustomerId } = req.body;
-  const secondaryCustomer = customers.get(mergeCustomerId);
-
-  if (!primaryCustomer) {
-    return res.status(404).json({
-      success: false,
-      error: { code: 'NOT_FOUND', message: 'Primary customer not found' }
-    });
-  }
-
-  if (!secondaryCustomer) {
-    return res.status(404).json({
-      success: false,
-      error: { code: 'NOT_FOUND', message: 'Secondary customer not found' }
-    });
-  }
-
-  // Merge channel identities
-  primaryCustomer.channelIdentities = [
-    ...primaryCustomer.channelIdentities,
-    ...secondaryCustomer.channelIdentities
-  ];
-
-  // Merge metadata
-  primaryCustomer.metadata = { ...secondaryCustomer.metadata, ...primaryCustomer.metadata };
-
-  // Update counts
-  primaryCustomer.conversationCount += secondaryCustomer.conversationCount;
-  primaryCustomer.totalMessageCount += secondaryCustomer.totalMessageCount;
-
-  // Use earliest first contact
-  if (new Date(secondaryCustomer.firstContactAt) < new Date(primaryCustomer.firstContactAt)) {
-    primaryCustomer.firstContactAt = secondaryCustomer.firstContactAt;
-  }
-
-  primaryCustomer.updatedAt = new Date().toISOString();
-
-  // Remove secondary customer
-  customers.delete(mergeCustomerId);
-
-  res.json({
-    success: true,
-    data: primaryCustomer
-  });
-});
 
 export default router;
