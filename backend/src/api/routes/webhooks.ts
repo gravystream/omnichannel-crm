@@ -5,7 +5,6 @@
 import { Router, Request, Response } from 'express';
 import crypto from 'crypto';
 import { getPool } from '../../utils/database';
-import { v4 as uuidv4 } from 'uuid';
 
 // Helper function to find or create customer
 async function findOrCreateCustomer(pool: any, email: string | null, phone: string | null, name: string | null) {
@@ -22,14 +21,13 @@ async function findOrCreateCustomer(pool: any, email: string | null, phone: stri
     if (result.rows.length > 0) customer = result.rows[0];
   }
 
-  // Create new customer if not found
+  // Create new customer if not found (let DB auto-generate ID)
   if (!customer) {
-    const customerId = uuidv4();
     const result = await pool.query(
-      `INSERT INTO customers (id, email, phone, name, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, NOW(), NOW())
+      `INSERT INTO customers (email, phone, name, created_at, updated_at)
+       VALUES ($1, $2, $3, NOW(), NOW())
        RETURNING *`,
-      [customerId, email, phone, name || 'Unknown']
+      [email, phone, name || 'Unknown']
     );
     customer = result.rows[0];
     console.log('[Webhook] Created new customer:', customer.id);
@@ -39,7 +37,7 @@ async function findOrCreateCustomer(pool: any, email: string | null, phone: stri
 }
 
 // Helper function to find or create conversation
-async function findOrCreateConversation(pool: any, customerId: string, channel: string, subject: string | null) {
+async function findOrCreateConversation(pool: any, customerId: number, channel: string, subject: string | null) {
   // Try to find existing open conversation for this customer and channel
   const result = await pool.query(
     `SELECT * FROM conversations
@@ -52,25 +50,24 @@ async function findOrCreateConversation(pool: any, customerId: string, channel: 
     return result.rows[0];
   }
 
-  // Create new conversation
-  const convId = uuidv4();
+  // Create new conversation (let DB auto-generate ID)
   const newConv = await pool.query(
-    `INSERT INTO conversations (id, customer_id, channel, status, subject, priority, created_at, updated_at)
-     VALUES ($1, $2, $3, 'open', $4, 'normal', NOW(), NOW())
+    `INSERT INTO conversations (customer_id, channel, status, subject, priority, created_at, updated_at)
+     VALUES ($1, $2, 'open', $3, 'normal', NOW(), NOW())
      RETURNING *`,
-    [convId, customerId, channel, subject || `${channel.charAt(0).toUpperCase() + channel.slice(1)} Inquiry`]
+    [customerId, channel, subject || `${channel.charAt(0).toUpperCase() + channel.slice(1)} Inquiry`]
   );
   console.log('[Webhook] Created new conversation:', newConv.rows[0].id);
   return newConv.rows[0];
 }
 
 // Helper function to create message
-async function createMessage(pool: any, conversationId: string, content: string, senderType: string, channel: string) {
-  const messageId = uuidv4();
-  await pool.query(
-    `INSERT INTO messages (id, conversation_id, content, sender_type, channel, created_at)
-     VALUES ($1, $2, $3, $4, $5, NOW())`,
-    [messageId, conversationId, content, senderType, channel]
+async function createMessage(pool: any, conversationId: number, content: string, senderType: string, channel: string) {
+  const result = await pool.query(
+    `INSERT INTO messages (conversation_id, content, sender_type, channel, created_at)
+     VALUES ($1, $2, $3, $4, NOW())
+     RETURNING id`,
+    [conversationId, content, senderType, channel]
   );
 
   // Update conversation timestamp
@@ -79,8 +76,8 @@ async function createMessage(pool: any, conversationId: string, content: string,
     [conversationId]
   );
 
-  console.log('[Webhook] Created message:', messageId);
-  return messageId;
+  console.log('[Webhook] Created message:', result.rows[0].id);
+  return result.rows[0].id;
 }
 
 const router = Router();
