@@ -205,7 +205,21 @@ export const aiApi = {
     return data;
   },
 
-  saveConfig: async (config: { provider?: string; apiKey?: string; model?: string; autoResponse?: boolean; confidenceThreshold?: number; maxTokens?: number; temperature?: number }) => {
+  saveConfig: async (config: {
+    provider?: string;
+    apiKey?: string;
+    model?: string;
+    autoResponse?: boolean;
+    confidenceThreshold?: number;
+    maxTokens?: number;
+    temperature?: number;
+    autoAssign?: boolean;
+    aiEnabled?: boolean;
+    slackEscalationEnabled?: boolean;
+    slackWebhookUrl?: string;
+    slackChannel?: string;
+    enableKnowledgeDeflection?: boolean;
+  }) => {
     const { data } = await api.post<ApiResponse<any>>('/ai/config', config);
     return data;
   },
