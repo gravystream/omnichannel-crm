@@ -14,6 +14,7 @@ import aiRoutes from './ai';
 import integrationsRoutes from './integrations';
 import agentsRoutes from './agents';
 import inboxRoutes from './inbox';
+import knowledgeBaseRoutes from './knowledgebase';
 
 const router = Router();
 
@@ -29,5 +30,6 @@ router.use('/ai', aiRoutes);
 router.use('/integrations', integrationsRoutes);
 router.use('/agents', agentsRoutes);
 router.use('/inbox', inboxRoutes);
+router.use('/knowledge-base', knowledgeBaseRoutes);
 
 export default router;

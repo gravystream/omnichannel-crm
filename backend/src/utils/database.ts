@@ -45,6 +45,53 @@ export async function initDatabase(): Promise<void> {
   await p.query("CREATE INDEX IF NOT EXISTS idx_resolutions_status ON resolutions(status)");
   await p.query("CREATE INDEX IF NOT EXISTS idx_resolution_updates_resolution ON resolution_updates(resolution_id)");
   await p.query("CREATE INDEX IF NOT EXISTS idx_swarms_resolution ON swarms(resolution_id)");
+
+  // Knowledge Base articles table
+  await p.query(`
+    CREATE TABLE IF NOT EXISTS kb_articles (
+      id SERIAL PRIMARY KEY,
+      title VARCHAR(500) NOT NULL,
+      content TEXT NOT NULL,
+      summary TEXT,
+      category VARCHAR(64) DEFAULT 'general',
+      tags JSONB DEFAULT '[]',
+      status VARCHAR(32) DEFAULT 'draft',
+      author VARCHAR(128),
+      views INTEGER DEFAULT 0,
+      helpful INTEGER DEFAULT 0,
+      not_helpful INTEGER DEFAULT 0,
+      exclude_from_ai BOOLEAN DEFAULT FALSE,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    )
+  `);
+  await p.query("CREATE INDEX IF NOT EXISTS idx_kb_articles_category ON kb_articles(category)");
+  await p.query("CREATE INDEX IF NOT EXISTS idx_kb_articles_status ON kb_articles(status)");
+
+  // AI Configuration table
+  await p.query(`
+    CREATE TABLE IF NOT EXISTS ai_config (
+      id SERIAL PRIMARY KEY,
+      key VARCHAR(128) UNIQUE NOT NULL,
+      value TEXT,
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    )
+  `);
+
+  // AI Agent assignments and actions log
+  await p.query(`
+    CREATE TABLE IF NOT EXISTS ai_actions (
+      id SERIAL PRIMARY KEY,
+      conversation_id INTEGER,
+      action_type VARCHAR(64) NOT NULL,
+      action_data JSONB DEFAULT '{}',
+      result JSONB DEFAULT '{}',
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    )
+  `);
+  await p.query("CREATE INDEX IF NOT EXISTS idx_ai_actions_conversation ON ai_actions(conversation_id)");
+  await p.query("CREATE INDEX IF NOT EXISTS idx_ai_actions_type ON ai_actions(action_type)");
+
   console.log('[Database] Schema initialized');
 }
 

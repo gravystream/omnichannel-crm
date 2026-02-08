@@ -259,6 +259,89 @@ export const aiApi = {
     const { data } = await api.post<ApiResponse<{ response: string; provider: string; model: string; knowledgeUsed: number }>>('/ai/test', { message });
     return data;
   },
+
+  classifyMessage: async (message: string, conversationId?: string, channel?: string) => {
+    const { data } = await api.post<ApiResponse<any>>('/ai/classify', { message, conversationId, channel });
+    return data;
+  },
+
+  generateResponse: async (message: string, conversationId?: string, context?: string) => {
+    const { data } = await api.post<ApiResponse<any>>('/ai/respond', { message, conversationId, context });
+    return data;
+  },
+
+  autoAssign: async (conversationId: string, intent?: string, severity?: string, skills?: string[]) => {
+    const { data } = await api.post<ApiResponse<any>>('/ai/assign', { conversationId, intent, severity, skills });
+    return data;
+  },
+
+  escalateToSlack: async (conversationId: string, title: string, description: string, severity: string, channel?: string) => {
+    const { data } = await api.post<ApiResponse<any>>('/ai/escalate-slack', { conversationId, title, description, severity, channel });
+    return data;
+  },
+
+  getStats: async () => {
+    const { data } = await api.get<ApiResponse<any>>('/ai/stats');
+    return data;
+  },
+
+  getActions: async (limit?: number, type?: string) => {
+    const { data } = await api.get<ApiResponse<any[]>>('/ai/actions', { params: { limit, type } });
+    return data;
+  },
+};
+
+// Knowledge Base API
+export const knowledgeBaseApi = {
+  getArticles: async (params?: { search?: string; category?: string; status?: string; page?: number; pageSize?: number }) => {
+    const { data } = await api.get<ApiResponse<any[]>>('/knowledge-base/articles', { params });
+    return data;
+  },
+
+  getArticle: async (id: string) => {
+    const { data } = await api.get<ApiResponse<any>>(`/knowledge-base/articles/${id}`);
+    return data;
+  },
+
+  createArticle: async (article: { title: string; content: string; category?: string; tags?: string[]; status?: string; summary?: string }) => {
+    const { data } = await api.post<ApiResponse<any>>('/knowledge-base/articles', article);
+    return data;
+  },
+
+  updateArticle: async (id: string, article: { title?: string; content?: string; category?: string; tags?: string[]; status?: string; summary?: string }) => {
+    const { data } = await api.put<ApiResponse<any>>(`/knowledge-base/articles/${id}`, article);
+    return data;
+  },
+
+  deleteArticle: async (id: string) => {
+    const { data } = await api.delete<ApiResponse<void>>(`/knowledge-base/articles/${id}`);
+    return data;
+  },
+
+  markHelpful: async (id: string, helpful: boolean) => {
+    const { data } = await api.post<ApiResponse<any>>(`/knowledge-base/articles/${id}/helpful`, { helpful });
+    return data;
+  },
+
+  getCategories: async () => {
+    const { data } = await api.get<ApiResponse<any[]>>('/knowledge-base/categories');
+    return data;
+  },
+
+  search: async (query: string, limit?: number) => {
+    const { data } = await api.get<ApiResponse<any[]>>('/knowledge-base/search', { params: { q: query, limit } });
+    return data;
+  },
+
+  getStats: async () => {
+    const { data } = await api.get<ApiResponse<any>>('/knowledge-base/stats');
+    return data;
+  },
+
+  importArticles: async (articles: any[]) => {
+    const { data } = await api.post<ApiResponse<any>>('/knowledge-base/import', { articles });
+    return data;
+  },
 };
 
 // Admin API
