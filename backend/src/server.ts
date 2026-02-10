@@ -35,6 +35,7 @@ import adminRoutes from './api/routes/admin';
 import aiRoutes from './api/routes/ai';
 import integrationsRoutes from './api/routes/integrations';
 import inboxRoutes from './api/routes/inbox';
+import knowledgeBaseRoutes from './api/routes/knowledgebase';
 
 // Initialize logger
 const logger = new Logger('Server');
@@ -286,6 +287,7 @@ app.use('/api/v1/analytics', analyticsRoutes);
 app.use('/api/v1/admin', adminRoutes);
 app.use('/api/v1/ai', aiRoutes);
 app.use('/api/v1/inbox', inboxRoutes);
+app.use('/api/v1/knowledge-base', knowledgeBaseRoutes);
 
 // API documentation
 app.get('/api', (req: Request, res: Response) => {
