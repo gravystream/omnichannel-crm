@@ -12,7 +12,7 @@ export function getPool(): Pool {
       password: process.env.DB_PASSWORD || 'CrmSecure2024!',
       max: 20,
       idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 5000,
+      connectionTimeoutMillis: 30000,
     };
     pool = new Pool(config);
     pool.on('error', (err: Error) => console.error('[Database] Pool error:', err));
