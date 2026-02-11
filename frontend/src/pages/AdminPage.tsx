@@ -96,10 +96,10 @@ const AdminPage: React.FC = () => {
     setLoading(true);
     try {
       const [agentsRes, rolesRes, desRes, permsRes, teamsRes, slaRes, rulesRes, settingsRes] = await Promise.all([
-        api.get('/api/v1/agents'),
-        api.get('/api/v1/agents/config/roles'),
-        api.get('/api/v1/agents/config/designations'),
-        api.get('/api/v1/agents/config/permissions'),
+        api.get('/agents'),
+        api.get('/agents/config/roles'),
+        api.get('/agents/config/designations'),
+        api.get('/agents/config/permissions'),
         adminApi.getTeams(),
         adminApi.getSLAConfigs(),
         adminApi.getAutomationRules(),
