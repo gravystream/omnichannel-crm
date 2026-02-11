@@ -77,7 +77,7 @@ const AdminPage: React.FC = () => {
   const [editingAutomation, setEditingAutomation] = useState<AutomationRule | null>(null);
 
   const [agentForm, setAgentForm] = useState({
-    name: '', email: '', phone: '', roleId: '', designationId: '', department: 'Support', skills: '', maxChats: 5
+    name: '', email: '', phone: '', roleId: '', designationId: '', department: 'Support', skills: '', maxChats: 5, password: '', confirmPassword: ''
   });
 
   const [roleForm, setRoleForm] = useState({
@@ -123,20 +123,63 @@ const AdminPage: React.FC = () => {
 
   const handleSaveAgent = async () => {
     try {
+      // Validation for new agents
+      if (!editingAgent) {
+        if (!agentForm.password || !agentForm.confirmPassword) {
+          alert('Password is required for new agents');
+          return;
+        }
+        if (agentForm.password !== agentForm.confirmPassword) {
+          alert('Passwords do not match');
+          return;
+        }
+        if (agentForm.password.length < 8) {
+          alert('Password must be at least 8 characters long');
+          return;
+        }
+      }
+
       const data = {
         ...agentForm,
         skills: agentForm.skills.split(',').map(s => s.trim()).filter(Boolean)
       };
+
       if (editingAgent) {
-        await api.put('/api/v1/agents/' + editingAgent.id, data);
+        await api.put('/agents/' + editingAgent.id, data);
       } else {
-        await api.post('/api/v1/agents', data);
+        // Create agent profile
+        const agentResponse = await api.post('/agents', data);
+
+        // Create login credentials (register user)
+        const [firstName, ...lastNameParts] = agentForm.name.split(' ');
+        const lastName = lastNameParts.join(' ') || firstName;
+
+        try {
+          await api.post('/auth/register', {
+            email: agentForm.email,
+            password: agentForm.password,
+            firstName,
+            lastName,
+            role: 'agent', // Default role for agents
+            skills: agentForm.skills.split(',').map(s => s.trim()).filter(Boolean)
+          });
+          alert('Agent created successfully! They can now log in with their email and password.');
+        } catch (regErr: any) {
+          console.error('Registration error:', regErr);
+          if (regErr.response?.data?.error?.code === 'USER_EXISTS') {
+            alert('Agent profile created, but user account already exists. The agent can use their existing login credentials.');
+          } else {
+            alert('Agent profile created, but failed to create login credentials. Please create them manually or contact administrator.');
+          }
+        }
       }
+
       fetchData();
       setShowAgentModal(false);
       resetAgentForm();
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error saving agent:', err);
+      alert('Error saving agent: ' + (err.response?.data?.error?.message || err.message || 'Unknown error'));
     }
   };
 
@@ -201,7 +244,7 @@ const AdminPage: React.FC = () => {
   };
 
   const resetAgentForm = () => {
-    setAgentForm({ name: '', email: '', phone: '', roleId: '', designationId: '', department: 'Support', skills: '', maxChats: 5 });
+    setAgentForm({ name: '', email: '', phone: '', roleId: '', designationId: '', department: 'Support', skills: '', maxChats: 5, password: '', confirmPassword: '' });
     setEditingAgent(null);
   };
 
@@ -635,6 +678,26 @@ const AdminPage: React.FC = () => {
                 <input type="tel" value={agentForm.phone} onChange={e => setAgentForm({...agentForm, phone: e.target.value})}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2" placeholder="+1234567890" />
               </div>
+
+              {!editingAgent && (
+                <>
+                  <div className="border-t border-gray-200 pt-4">
+                    <p className="text-sm text-gray-600 mb-3">Set login credentials for this agent</p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Password *</label>
+                    <input type="password" value={agentForm.password} onChange={e => setAgentForm({...agentForm, password: e.target.value})}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2" placeholder="Minimum 8 characters" />
+                    <p className="text-xs text-gray-500 mt-1">Agent will use this to log in</p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Confirm Password *</label>
+                    <input type="password" value={agentForm.confirmPassword} onChange={e => setAgentForm({...agentForm, confirmPassword: e.target.value})}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2" placeholder="Re-enter password" />
+                  </div>
+                </>
+              )}
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Role *</label>
                 <select value={agentForm.roleId} onChange={e => setAgentForm({...agentForm, roleId: e.target.value})}
