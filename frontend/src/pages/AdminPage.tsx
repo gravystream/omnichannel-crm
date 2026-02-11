@@ -268,7 +268,9 @@ const AdminPage: React.FC = () => {
       designationId: agent.designationId,
       department: agent.department,
       skills: agent.skills.join(', '),
-      maxChats: agent.maxChats
+      maxChats: agent.maxChats,
+      password: '',
+      confirmPassword: ''
     });
     setShowAgentModal(true);
   };
