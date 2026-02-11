@@ -29,14 +29,8 @@ const defaultDesignations = [
   { id: 'des-intern', name: 'Intern', department: 'Support', level: 7 }
 ];
 
-// Initialize default agents
-const defaultAgents = [
-  { id: 'agent-1', name: 'John Smith', email: 'john@gravystream.io', phone: '+1234567890', roleId: 'role-admin', designationId: 'des-manager', status: 'online', avatar: '', department: 'Support', joinedAt: '2024-01-15', skills: ['billing', 'technical'], maxChats: 5 },
-  { id: 'agent-2', name: 'Sarah Johnson', email: 'sarah@gravystream.io', phone: '+1234567891', roleId: 'role-supervisor', designationId: 'des-team-lead', status: 'online', avatar: '', department: 'Support', joinedAt: '2024-02-20', skills: ['sales', 'technical'], maxChats: 4 },
-  { id: 'agent-3', name: 'Mike Wilson', email: 'mike@gravystream.io', phone: '+1234567892', roleId: 'role-senior-agent', designationId: 'des-senior', status: 'away', avatar: '', department: 'Support', joinedAt: '2024-03-10', skills: ['billing', 'sales'], maxChats: 5 },
-  { id: 'agent-4', name: 'Emily Davis', email: 'emily@gravystream.io', phone: '+1234567893', roleId: 'role-agent', designationId: 'des-agent', status: 'online', avatar: '', department: 'Support', joinedAt: '2024-04-05', skills: ['technical'], maxChats: 4 },
-  { id: 'agent-5', name: 'Chris Brown', email: 'chris@gravystream.io', phone: '+1234567894', roleId: 'role-agent', designationId: 'des-junior', status: 'offline', avatar: '', department: 'Support', joinedAt: '2024-05-01', skills: ['sales'], maxChats: 3 }
-];
+// Initialize default agents (empty - add your real agents through the admin panel)
+const defaultAgents: any[] = [];
 
 // Initialize data
 defaultRoles.forEach(role => roles.set(role.id, role));
