@@ -216,3 +216,70 @@ export interface Notification {
   read: boolean;
   createdAt: string;
 }
+
+// Admin Types
+export interface Team {
+  id: string;
+  name: string;
+  description?: string;
+  memberIds: string[];
+  skills: string[];
+  workingHours?: {
+    timezone: string;
+    schedule: Record<string, { start: string; end: string }>;
+  };
+  isEscalationTeam: boolean;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface SLAConfig {
+  id: string;
+  priority: 'P0' | 'P1' | 'P2' | 'P3';
+  name: string;
+  firstResponseMinutes: number;
+  resolutionMinutes: number;
+  escalationMinutes: number;
+  businessHoursOnly: boolean;
+  isActive: boolean;
+  updatedAt?: string;
+}
+
+export interface AutomationRule {
+  id: string;
+  name: string;
+  description?: string;
+  trigger: {
+    event: string;
+    conditions: Array<{ field: string; operator: string; value: any }>;
+  };
+  actions: Array<{ type: string; config: Record<string, any> }>;
+  priority: number;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface SystemSettings {
+  general: {
+    companyName: string;
+    supportEmail: string;
+    timezone: string;
+    dateFormat: string;
+    timeFormat: '12h' | '24h';
+  };
+  ai: {
+    provider: string;
+    model: string;
+    confidenceThreshold: number;
+    autoClassifyEnabled: boolean;
+    autoDeflectEnabled: boolean;
+    maxAutoResponsesPerConversation: number;
+  };
+  channels: Record<string, { enabled: boolean; [key: string]: any }>;
+  notifications: {
+    slackEnabled: boolean;
+    emailAlertsEnabled: boolean;
+    slaWarningMinutes: number;
+  };
+}

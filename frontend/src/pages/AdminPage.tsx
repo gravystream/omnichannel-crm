@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import api from '../services/api';
+import type { Team, SLAConfig, AutomationRule, SystemSettings } from '../types';
+import { adminApi } from '../services/adminApi';
 
 interface Role {
   id: string;
@@ -40,7 +42,7 @@ interface Permission {
 }
 
 const AdminPage: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'agents' | 'roles' | 'designations'>('agents');
+  const [activeTab, setActiveTab] = useState<string>('agents');
   const [agents, setAgents] = useState<Agent[]>([]);
   const [roles, setRoles] = useState<Role[]>([]);
   const [designations, setDesignations] = useState<Designation[]>([]);
@@ -52,6 +54,27 @@ const AdminPage: React.FC = () => {
   const [editingAgent, setEditingAgent] = useState<Agent | null>(null);
   const [editingRole, setEditingRole] = useState<Role | null>(null);
   const [editingDesignation, setEditingDesignation] = useState<Designation | null>(null);
+
+  // New tab states
+  const [teams, setTeams] = useState<Team[]>([]);
+  const [slaConfigs, setSlaConfigs] = useState<SLAConfig[]>([]);
+  const [automationRules, setAutomationRules] = useState<AutomationRule[]>([]);
+  const [settings, setSettings] = useState<SystemSettings | null>(null);
+
+  // Team modal states
+  const [showTeamModal, setShowTeamModal] = useState(false);
+  const [editingTeam, setEditingTeam] = useState<Team | null>(null);
+  const [teamForm, setTeamForm] = useState({
+    name: '', description: '', skills: '', isEscalationTeam: false
+  });
+
+  // SLA modal states
+  const [showSlaModal, setShowSlaModal] = useState(false);
+  const [editingSla, setEditingSla] = useState<SLAConfig | null>(null);
+
+  // Automation modal states
+  const [showAutomationModal, setShowAutomationModal] = useState(false);
+  const [editingAutomation, setEditingAutomation] = useState<AutomationRule | null>(null);
 
   const [agentForm, setAgentForm] = useState({
     name: '', email: '', phone: '', roleId: '', designationId: '', department: 'Support', skills: '', maxChats: 5
@@ -72,16 +95,26 @@ const AdminPage: React.FC = () => {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [agentsRes, rolesRes, desRes, permsRes] = await Promise.all([
+      const [agentsRes, rolesRes, desRes, permsRes, teamsRes, slaRes, rulesRes, settingsRes] = await Promise.all([
         api.get('/api/v1/agents'),
         api.get('/api/v1/agents/config/roles'),
         api.get('/api/v1/agents/config/designations'),
-        api.get('/api/v1/agents/config/permissions')
+        api.get('/api/v1/agents/config/permissions'),
+        adminApi.getTeams(),
+        adminApi.getSLAConfigs(),
+        adminApi.getAutomationRules(),
+        adminApi.getSettings()
       ]);
+
       setAgents(agentsRes.data);
       setRoles(rolesRes.data);
       setDesignations(desRes.data);
       setPermissions(permsRes.data);
+
+      if (teamsRes.success && teamsRes.data) setTeams(teamsRes.data);
+      if (slaRes.success && slaRes.data) setSlaConfigs(slaRes.data);
+      if (rulesRes.success && rulesRes.data) setAutomationRules(rulesRes.data);
+      if (settingsRes.success && settingsRes.data) setSettings(settingsRes.data);
     } catch (err) {
       console.error('Error fetching data:', err);
     }
@@ -235,6 +268,155 @@ const AdminPage: React.FC = () => {
     }
   };
 
+  // Team handlers
+  const handleSaveTeam = async () => {
+    try {
+      const data = {
+        name: teamForm.name,
+        description: teamForm.description,
+        skills: teamForm.skills.split(',').map(s => s.trim()).filter(Boolean),
+        isEscalationTeam: teamForm.isEscalationTeam
+      };
+      if (editingTeam) {
+        await adminApi.updateTeam(editingTeam.id, data);
+      } else {
+        await adminApi.createTeam(data);
+      }
+      fetchData();
+      setShowTeamModal(false);
+      resetTeamForm();
+    } catch (err) {
+      console.error('Error saving team:', err);
+    }
+  };
+
+  const handleDeleteTeam = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this team?')) return;
+    try {
+      await adminApi.deleteTeam(id);
+      fetchData();
+    } catch (err: any) {
+      alert(err.response?.data?.error?.message || 'Error deleting team');
+    }
+  };
+
+  const openEditTeam = (team: Team) => {
+    setEditingTeam(team);
+    setTeamForm({
+      name: team.name,
+      description: team.description || '',
+      skills: team.skills.join(', '),
+      isEscalationTeam: team.isEscalationTeam
+    });
+    setShowTeamModal(true);
+  };
+
+  const resetTeamForm = () => {
+    setTeamForm({ name: '', description: '', skills: '', isEscalationTeam: false });
+    setEditingTeam(null);
+  };
+
+  // SLA handlers
+  const handleSaveSLA = async (sla: SLAConfig) => {
+    try {
+      await adminApi.updateSLAConfig(sla.priority, {
+        firstResponseMinutes: sla.firstResponseMinutes,
+        resolutionMinutes: sla.resolutionMinutes,
+        escalationMinutes: sla.escalationMinutes,
+        businessHoursOnly: sla.businessHoursOnly,
+        isActive: sla.isActive
+      });
+      fetchData();
+      setShowSlaModal(false);
+      setEditingSla(null);
+    } catch (err) {
+      console.error('Error saving SLA:', err);
+    }
+  };
+
+  const openEditSla = (sla: SLAConfig) => {
+    setEditingSla(sla);
+    setShowSlaModal(true);
+  };
+
+  // Automation handlers
+  const [automationForm, setAutomationForm] = useState({
+    name: '', description: '', priority: 10, isActive: true,
+    triggerEvent: 'message.received',
+    conditions: [] as Array<{field: string; operator: string; value: string}>,
+    actions: [] as Array<{type: string; config: Record<string, any>}>
+  });
+
+  const handleSaveAutomation = async () => {
+    try {
+      const data = {
+        name: automationForm.name,
+        description: automationForm.description,
+        trigger: {
+          event: automationForm.triggerEvent,
+          conditions: automationForm.conditions
+        },
+        actions: automationForm.actions,
+        priority: automationForm.priority,
+        isActive: automationForm.isActive
+      };
+      if (editingAutomation) {
+        await adminApi.updateAutomationRule(editingAutomation.id, data);
+      } else {
+        await adminApi.createAutomationRule(data);
+      }
+      fetchData();
+      setShowAutomationModal(false);
+      resetAutomationForm();
+    } catch (err) {
+      console.error('Error saving automation rule:', err);
+    }
+  };
+
+  const handleDeleteAutomation = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this automation rule?')) return;
+    try {
+      await adminApi.deleteAutomationRule(id);
+      fetchData();
+    } catch (err) {
+      console.error('Error deleting automation rule:', err);
+    }
+  };
+
+  const openEditAutomation = (rule: AutomationRule) => {
+    setEditingAutomation(rule);
+    setAutomationForm({
+      name: rule.name,
+      description: rule.description || '',
+      priority: rule.priority,
+      isActive: rule.isActive,
+      triggerEvent: rule.trigger.event,
+      conditions: rule.trigger.conditions,
+      actions: rule.actions
+    });
+    setShowAutomationModal(true);
+  };
+
+  const resetAutomationForm = () => {
+    setAutomationForm({
+      name: '', description: '', priority: 10, isActive: true,
+      triggerEvent: 'message.received', conditions: [], actions: []
+    });
+    setEditingAutomation(null);
+  };
+
+  // Settings handler
+  const handleSaveSettings = async () => {
+    if (!settings) return;
+    try {
+      await adminApi.updateSettings(settings);
+      fetchData();
+      alert('Settings saved successfully!');
+    } catch (err) {
+      console.error('Error saving settings:', err);
+    }
+  };
+
   if (loading) {
     return <div className="flex items-center justify-center h-64"><div className="text-gray-500">Loading...</div></div>;
   }
@@ -246,19 +428,31 @@ const AdminPage: React.FC = () => {
 
       <div className="border-b border-gray-200 mb-6">
         <nav className="flex space-x-8">
-          {['agents', 'roles', 'designations'].map(tab => (
+          {[
+            { id: 'agents', label: 'Agents', count: agents.length },
+            { id: 'roles', label: 'Roles', count: roles.length },
+            { id: 'designations', label: 'Designations', count: designations.length },
+            { id: 'teams', label: 'Teams', count: teams.length },
+            { id: 'sla', label: 'SLA Config', count: slaConfigs.length },
+            { id: 'automation', label: 'Automation', count: automationRules.length },
+            { id: 'settings', label: 'Settings', count: 0 }
+          ].map(tab => (
             <button
-              key={tab}
-              onClick={() => setActiveTab(tab as any)}
-              className={'py-3 px-1 border-b-2 font-medium text-sm ' + 
-                (activeTab === tab 
-                  ? 'border-blue-500 text-blue-600' 
-                  : 'border-transparent text-gray-500 hover:text-gray-700')}
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={
+                'py-3 px-1 border-b-2 font-medium text-sm ' +
+                (activeTab === tab.id
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300')
+              }
             >
-              {tab.charAt(0).toUpperCase() + tab.slice(1)}
-              <span className="ml-2 bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full text-xs">
-                {tab === 'agents' ? agents.length : tab === 'roles' ? roles.length : designations.length}
-              </span>
+              {tab.label}
+              {tab.count > 0 && (
+                <span className="ml-2 bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full text-xs">
+                  {tab.count}
+                </span>
+              )}
             </button>
           ))}
         </nav>
@@ -553,6 +747,335 @@ const AdminPage: React.FC = () => {
               <button onClick={() => { setShowDesignationModal(false); resetDesignationForm(); }} className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
               <button onClick={handleSaveDesignation} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
                 {editingDesignation ? 'Save Changes' : 'Add Designation'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Teams Tab */}
+      {activeTab === 'teams' && (
+        <div>
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-lg font-semibold text-gray-800">Team Management</h2>
+            <button onClick={() => { resetTeamForm(); setShowTeamModal(true); }} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">
+              + Add Team
+            </button>
+          </div>
+          <div className="bg-white rounded-lg shadow overflow-hidden">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Team Name</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Members</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Skills</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {teams.map(team => (
+                  <tr key={team.id} className="hover:bg-gray-50">
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="text-sm font-medium text-gray-900">{team.name}</div>
+                      {team.description && <div className="text-sm text-gray-500">{team.description}</div>}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span className="text-sm text-gray-900">{team.memberIds.length} members</span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex flex-wrap gap-1">
+                        {team.skills.slice(0, 3).map(skill => (
+                          <span key={skill} className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded">{skill}</span>
+                        ))}
+                        {team.skills.length > 3 && <span className="text-xs text-gray-400">+{team.skills.length - 3}</span>}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      {team.isEscalationTeam && (
+                        <span className="px-2 py-1 text-xs bg-red-100 text-red-700 rounded">Escalation</span>
+                      )}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
+                      <button onClick={() => openEditTeam(team)} className="text-blue-600 hover:text-blue-800 mr-3">Edit</button>
+                      <button onClick={() => handleDeleteTeam(team.id)} className="text-red-600 hover:text-red-800">Delete</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {showTeamModal && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+              <div className="bg-white rounded-lg p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
+                <h3 className="text-lg font-semibold mb-4">{editingTeam ? 'Edit Team' : 'Add New Team'}</h3>
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Team Name *</label>
+                    <input type="text" value={teamForm.name} onChange={e => setTeamForm({...teamForm, name: e.target.value})}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2" placeholder="e.g., Technical Support" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                    <textarea value={teamForm.description} onChange={e => setTeamForm({...teamForm, description: e.target.value})}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2" rows={3} placeholder="Team responsibilities..." />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Skills (comma-separated)</label>
+                    <input type="text" value={teamForm.skills} onChange={e => setTeamForm({...teamForm, skills: e.target.value})}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2" placeholder="e.g., technical, backend, infrastructure" />
+                  </div>
+                  <div className="flex items-center">
+                    <input type="checkbox" checked={teamForm.isEscalationTeam} onChange={e => setTeamForm({...teamForm, isEscalationTeam: e.target.checked})}
+                      className="rounded border-gray-300 mr-2" />
+                    <label className="text-sm text-gray-700">Escalation Team</label>
+                  </div>
+                </div>
+                <div className="flex justify-end gap-2 mt-6">
+                  <button onClick={() => { setShowTeamModal(false); resetTeamForm(); }} className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
+                  <button onClick={handleSaveTeam} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                    {editingTeam ? 'Save Changes' : 'Add Team'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* SLA Tab */}
+      {activeTab === 'sla' && (
+        <div>
+          <h2 className="text-lg font-semibold text-gray-800 mb-4">SLA Configuration</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {slaConfigs.map(sla => {
+              const priorityColors: Record<string, string> = {
+                P0: '#ef4444', P1: '#f97316', P2: '#eab308', P3: '#10b981'
+              };
+              return (
+                <div key={sla.id} className="bg-white rounded-lg shadow p-4 border-l-4" style={{borderLeftColor: priorityColors[sla.priority]}}>
+                  <div className="flex justify-between items-start mb-3">
+                    <div><h3 className="font-semibold text-gray-800">{sla.priority} - {sla.name}</h3></div>
+                    <button onClick={() => openEditSla(sla)} className="text-blue-600 hover:text-blue-800 text-sm">Edit</button>
+                  </div>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">First Response:</span>
+                      <span className="font-medium">{sla.firstResponseMinutes}m</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Resolution:</span>
+                      <span className="font-medium">{sla.resolutionMinutes}m</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Escalation:</span>
+                      <span className="font-medium">{sla.escalationMinutes}m</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-gray-600">Business Hours Only:</span>
+                      <span className={sla.businessHoursOnly ? 'text-green-600' : 'text-gray-400'}>
+                        {sla.businessHoursOnly ? 'Yes' : 'No'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {showSlaModal && editingSla && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+              <div className="bg-white rounded-lg p-6 w-full max-w-md">
+                <h3 className="text-lg font-semibold mb-4">Edit SLA - {editingSla.priority}</h3>
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">First Response (minutes)</label>
+                    <input type="number" value={editingSla.firstResponseMinutes}
+                      onChange={e => setEditingSla({...editingSla, firstResponseMinutes: Number(e.target.value)})}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Resolution (minutes)</label>
+                    <input type="number" value={editingSla.resolutionMinutes}
+                      onChange={e => setEditingSla({...editingSla, resolutionMinutes: Number(e.target.value)})}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Escalation (minutes)</label>
+                    <input type="number" value={editingSla.escalationMinutes}
+                      onChange={e => setEditingSla({...editingSla, escalationMinutes: Number(e.target.value)})}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2" />
+                  </div>
+                  <div className="flex items-center">
+                    <input type="checkbox" checked={editingSla.businessHoursOnly}
+                      onChange={e => setEditingSla({...editingSla, businessHoursOnly: e.target.checked})}
+                      className="rounded border-gray-300 mr-2" />
+                    <label className="text-sm text-gray-700">Business Hours Only</label>
+                  </div>
+                </div>
+                <div className="flex justify-end gap-2 mt-6">
+                  <button onClick={() => { setShowSlaModal(false); setEditingSla(null); }} className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
+                  <button onClick={() => handleSaveSLA(editingSla)} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Save Changes</button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Automation Tab */}
+      {activeTab === 'automation' && (
+        <div>
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-lg font-semibold text-gray-800">Automation Rules</h2>
+            <button onClick={() => { resetAutomationForm(); setShowAutomationModal(true); }} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+              + Add Rule
+            </button>
+          </div>
+          <div className="space-y-3">
+            {automationRules.map(rule => (
+              <div key={rule.id} className="bg-white rounded-lg shadow p-4">
+                <div className="flex justify-between items-start">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-2">
+                      <h3 className="font-semibold text-gray-800">{rule.name}</h3>
+                      <span className="px-2 py-0.5 bg-gray-100 text-gray-600 text-xs rounded">Priority: {rule.priority}</span>
+                      <span className={`px-2 py-0.5 text-xs rounded ${rule.isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
+                        {rule.isActive ? 'Active' : 'Inactive'}
+                      </span>
+                    </div>
+                    <p className="text-sm text-gray-600 mb-2">{rule.description}</p>
+                    <div className="text-xs text-gray-500">
+                      Trigger: <code className="bg-gray-100 px-1 rounded">{rule.trigger.event}</code> |
+                      {rule.trigger.conditions.length} conditions | {rule.actions.length} actions
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={() => openEditAutomation(rule)} className="text-blue-600 hover:text-blue-800 text-sm">Edit</button>
+                    <button onClick={() => handleDeleteAutomation(rule.id)} className="text-red-600 hover:text-red-800 text-sm">Delete</button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {showAutomationModal && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+              <div className="bg-white rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+                <h3 className="text-lg font-semibold mb-4">{editingAutomation ? 'Edit Rule' : 'Add Automation Rule'}</h3>
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Rule Name *</label>
+                    <input type="text" value={automationForm.name} onChange={e => setAutomationForm({...automationForm, name: e.target.value})}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                    <textarea value={automationForm.description} onChange={e => setAutomationForm({...automationForm, description: e.target.value})}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2" rows={2} />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Priority</label>
+                      <input type="number" value={automationForm.priority} onChange={e => setAutomationForm({...automationForm, priority: Number(e.target.value)})}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Trigger Event</label>
+                      <select value={automationForm.triggerEvent} onChange={e => setAutomationForm({...automationForm, triggerEvent: e.target.value})}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2">
+                        <option value="message.received">Message Received</option>
+                        <option value="conversation.classified">Conversation Classified</option>
+                        <option value="conversation.created">Conversation Created</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div className="flex items-center">
+                    <input type="checkbox" checked={automationForm.isActive} onChange={e => setAutomationForm({...automationForm, isActive: e.target.checked})}
+                      className="rounded border-gray-300 mr-2" />
+                    <label className="text-sm text-gray-700">Active</label>
+                  </div>
+                  <p className="text-sm text-gray-500">Note: Condition and action configuration can be added in a future update</p>
+                </div>
+                <div className="flex justify-end gap-2 mt-6">
+                  <button onClick={() => { setShowAutomationModal(false); resetAutomationForm(); }} className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
+                  <button onClick={handleSaveAutomation} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                    {editingAutomation ? 'Save Changes' : 'Add Rule'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Settings Tab */}
+      {activeTab === 'settings' && settings && (
+        <div className="max-w-2xl">
+          <h2 className="text-lg font-semibold text-gray-800 mb-6">System Settings</h2>
+          <div className="bg-white rounded-lg shadow p-6 space-y-6">
+            <div className="border-b pb-6">
+              <h3 className="font-medium text-gray-900 mb-4">General Settings</h3>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Company Name</label>
+                  <input type="text" value={settings.general.companyName}
+                    onChange={e => setSettings({...settings, general: {...settings.general, companyName: e.target.value}})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Support Email</label>
+                  <input type="email" value={settings.general.supportEmail}
+                    onChange={e => setSettings({...settings, general: {...settings.general, supportEmail: e.target.value}})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                </div>
+              </div>
+            </div>
+
+            <div className="border-b pb-6">
+              <h3 className="font-medium text-gray-900 mb-4">AI Configuration</h3>
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Provider</label>
+                    <input type="text" value={settings.ai.provider}
+                      onChange={e => setSettings({...settings, ai: {...settings.ai, provider: e.target.value}})}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Model</label>
+                    <input type="text" value={settings.ai.model}
+                      onChange={e => setSettings({...settings, ai: {...settings.ai, model: e.target.value}})}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Confidence Threshold</label>
+                  <input type="number" step="0.01" min="0" max="1" value={settings.ai.confidenceThreshold}
+                    onChange={e => setSettings({...settings, ai: {...settings.ai, confidenceThreshold: Number(e.target.value)}})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                </div>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-gray-700">Auto-Classify Enabled</span>
+                    <input type="checkbox" checked={settings.ai.autoClassifyEnabled}
+                      onChange={e => setSettings({...settings, ai: {...settings.ai, autoClassifyEnabled: e.target.checked}})}
+                      className="rounded border-gray-300" />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-gray-700">Auto-Deflect Enabled</span>
+                    <input type="checkbox" checked={settings.ai.autoDeflectEnabled}
+                      onChange={e => setSettings({...settings, ai: {...settings.ai, autoDeflectEnabled: e.target.checked}})}
+                      className="rounded border-gray-300" />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end pt-4">
+              <button onClick={handleSaveSettings} className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                Save Settings
               </button>
             </div>
           </div>
