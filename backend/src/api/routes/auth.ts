@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import { v4 as uuidv4 } from 'uuid';
 import { getPool } from '../../utils/database';
 
 const router = Router();
@@ -110,12 +111,15 @@ router.post('/register', async (req: Request, res: Response) => {
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
 
+    // Generate unique ID
+    const userId = uuidv4();
+
     // Create user
     const result = await pool.query(
-      `INSERT INTO users (email, password, first_name, last_name, role, team_id, skills, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
+      `INSERT INTO users (id, email, password, first_name, last_name, role, team_id, skills, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())
        RETURNING id, email, first_name, last_name, role, team_id, skills`,
-      [email, hashedPassword, firstName, lastName, role || 'agent', teamId || null, skills || []]
+      [userId, email, hashedPassword, firstName, lastName, role || 'agent', teamId || null, skills || []]
     );
 
     const user = result.rows[0];
