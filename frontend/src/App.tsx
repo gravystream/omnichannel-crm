@@ -153,10 +153,40 @@ const AppRoutes: React.FC = () => {
         <Route path="/resolutions/:resolutionId" element={<ResolutionsPage />} />
         <Route path="/customers" element={<CustomersPage />} />
         <Route path="/customers/:customerId" element={<CustomersPage />} />
-        <Route path="/knowledge" element={<KnowledgeBasePage />} />
-              <Route path="/ai-agent" element={<AIAgentPage />} />
-        <Route path="/analytics" element={<AnalyticsPage />} />
-        <Route path="/settings" element={<SettingsPage />} />
+
+        {/* Admin-only routes */}
+        <Route
+          path="/knowledge"
+          element={
+            <AdminRoute>
+              <KnowledgeBasePage />
+            </AdminRoute>
+          }
+        />
+        <Route
+          path="/ai-agent"
+          element={
+            <AdminRoute>
+              <AIAgentPage />
+            </AdminRoute>
+          }
+        />
+        <Route
+          path="/analytics"
+          element={
+            <AdminRoute>
+              <AnalyticsPage />
+            </AdminRoute>
+          }
+        />
+        <Route
+          path="/settings"
+          element={
+            <AdminRoute>
+              <SettingsPage />
+            </AdminRoute>
+          }
+        />
         <Route
           path="/admin"
           element={

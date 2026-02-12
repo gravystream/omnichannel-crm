@@ -20,18 +20,23 @@ import { useAuth } from '../hooks/useAuth';
 import { useAppSelector, useAppDispatch, uiActions } from '../store';
 import { useSocket } from '../contexts/SocketContext';
 
-const navigation = [
+// Navigation for all users (agents can see these)
+const agentNavigation = [
   { name: 'Dashboard', href: '/', icon: HomeIcon },
   { name: 'Inbox', href: '/inbox', icon: InboxIcon },
   { name: 'Conversations', href: '/conversations', icon: ChatBubbleLeftRightIcon },
   { name: 'Resolutions', href: '/resolutions', icon: ClipboardDocumentListIcon },
   { name: 'Customers', href: '/customers', icon: UserGroupIcon },
+];
+
+// Navigation only for admins/owners
+const adminOnlyNavigation = [
   { name: 'Knowledge Base', href: '/knowledge', icon: BookOpenIcon },
   { name: 'AI Agent', href: '/ai-agent', icon: CpuChipIcon },
   { name: 'Analytics', href: '/analytics', icon: ChartBarIcon },
 ];
 
-const adminNavigation = [
+const settingsNavigation = [
   { name: 'Settings', href: '/settings', icon: Cog6ToothIcon },
   { name: 'Admin', href: '/admin', icon: ShieldCheckIcon },
 ];
@@ -70,7 +75,8 @@ export const MainLayout: React.FC = () => {
             </button>
           </div>
           <nav className="px-2 py-4 space-y-1">
-            {navigation.map(item => (
+            {/* Agent navigation - visible to all users */}
+            {agentNavigation.map(item => (
               <NavLink
                 key={item.name}
                 to={item.href}
@@ -87,10 +93,37 @@ export const MainLayout: React.FC = () => {
                 {item.name}
               </NavLink>
             ))}
+
+            {/* Admin-only navigation - only visible to owners/admins */}
             {user && (user.role === 'owner' || user.role === 'admin') && (
               <>
                 <div className="pt-4 mt-4 border-t">
-                  {adminNavigation.map(item => (
+                  <p className="px-3 mb-2 text-xs font-semibold text-gray-500 uppercase">
+                    Management
+                  </p>
+                  {adminOnlyNavigation.map(item => (
+                    <NavLink
+                      key={item.name}
+                      to={item.href}
+                      className={({ isActive }) =>
+                        `flex items-center px-3 py-2 text-sm font-medium rounded-lg transition-colors ${
+                          isActive
+                            ? 'bg-primary-50 text-primary-700'
+                            : 'text-gray-700 hover:bg-gray-100'
+                        }`
+                      }
+                      onClick={() => setSidebarOpen(false)}
+                    >
+                      <item.icon className="w-5 h-5 mr-3" />
+                      {item.name}
+                    </NavLink>
+                  ))}
+                </div>
+                <div className="pt-4 mt-4 border-t">
+                  <p className="px-3 mb-2 text-xs font-semibold text-gray-500 uppercase">
+                    Administration
+                  </p>
+                  {settingsNavigation.map(item => (
                     <NavLink
                       key={item.name}
                       to={item.href}
@@ -127,7 +160,8 @@ export const MainLayout: React.FC = () => {
 
           {/* Navigation */}
           <nav className="flex-1 px-2 py-4 space-y-1 overflow-y-auto">
-            {navigation.map(item => (
+            {/* Agent navigation - visible to all users */}
+            {agentNavigation.map(item => (
               <NavLink
                 key={item.name}
                 to={item.href}
@@ -144,13 +178,35 @@ export const MainLayout: React.FC = () => {
               </NavLink>
             ))}
 
+            {/* Admin-only navigation - only visible to owners/admins */}
             {user && (user.role === 'owner' || user.role === 'admin') && (
               <>
                 <div className="pt-4 mt-4 border-t">
                   <p className="px-3 mb-2 text-xs font-semibold text-gray-500 uppercase">
+                    Management
+                  </p>
+                  {adminOnlyNavigation.map(item => (
+                    <NavLink
+                      key={item.name}
+                      to={item.href}
+                      className={({ isActive }) =>
+                        `flex items-center px-3 py-2 text-sm font-medium rounded-lg transition-colors ${
+                          isActive
+                            ? 'bg-primary-50 text-primary-700'
+                            : 'text-gray-700 hover:bg-gray-100'
+                        }`
+                      }
+                    >
+                      <item.icon className="w-5 h-5 mr-3" />
+                      {item.name}
+                    </NavLink>
+                  ))}
+                </div>
+                <div className="pt-4 mt-4 border-t">
+                  <p className="px-3 mb-2 text-xs font-semibold text-gray-500 uppercase">
                     Administration
                   </p>
-                  {adminNavigation.map(item => (
+                  {settingsNavigation.map(item => (
                     <NavLink
                       key={item.name}
                       to={item.href}
