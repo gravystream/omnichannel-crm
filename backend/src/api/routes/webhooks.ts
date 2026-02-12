@@ -5,6 +5,7 @@
 import { Router, Request, Response } from 'express';
 import crypto from 'crypto';
 import { getPool } from '../../utils/database';
+import { getEventBus } from '../../core/EventBus';
 
 // Helper function to find or create customer
 async function findOrCreateCustomer(pool: any, email: string | null, phone: string | null, name: string | null) {
@@ -215,9 +216,20 @@ router.post('/email/sendgrid', async (req: Request, res: Response) => {
 
     // Create message
     const content = text || html || '(No content)';
-    await createMessage(pool, conversation.id, content, 'customer', 'email');
+    const messageId = await createMessage(pool, conversation.id, content, 'customer', 'email');
 
     console.log('[Email Webhook] Processed email into conversation:', conversation.id);
+
+    // Emit message.received event for AI processing
+    const eventBus = getEventBus();
+    await eventBus.publish('message.received', {
+      messageId: messageId,
+      conversationId: conversation.id,
+      channel: 'email',
+      direction: 'inbound',
+      senderType: 'customer',
+      customerId: customer.id,
+    });
 
     res.json({ success: true, message: 'Email processed', conversationId: conversation.id });
   } catch (error: any) {
@@ -250,7 +262,18 @@ router.post('/email/mailgun', async (req: Request, res: Response) => {
 
     // Create message
     const content = bodyPlain || bodyHtml || '(No content)';
-    await createMessage(pool, conversation.id, content, 'customer', 'email');
+    const messageId = await createMessage(pool, conversation.id, content, 'customer', 'email');
+
+    // Emit message.received event for AI processing
+    const eventBus = getEventBus();
+    await eventBus.publish('message.received', {
+      messageId: messageId,
+      conversationId: conversation.id,
+      channel: 'email',
+      direction: 'inbound',
+      senderType: 'customer',
+      customerId: customer.id,
+    });
 
     res.json({ success: true, message: 'Email processed', conversationId: conversation.id });
   } catch (error: any) {
@@ -289,9 +312,20 @@ router.post('/email/zoho', async (req: Request, res: Response) => {
     const conversation = await findOrCreateConversation(pool, customer.id, 'email', subject);
 
     // Create message
-    await createMessage(pool, conversation.id, emailContent, 'customer', 'email');
+    const messageId = await createMessage(pool, conversation.id, emailContent, 'customer', 'email');
 
     console.log('[Zoho Email Webhook] Processed email into conversation:', conversation.id);
+
+    // Emit message.received event for AI processing
+    const eventBus = getEventBus();
+    await eventBus.publish('message.received', {
+      messageId: messageId,
+      conversationId: conversation.id,
+      channel: 'email',
+      direction: 'inbound',
+      senderType: 'customer',
+      customerId: customer.id,
+    });
 
     res.json({ success: true, message: 'Email processed', conversationId: conversation.id });
   } catch (error: any) {
