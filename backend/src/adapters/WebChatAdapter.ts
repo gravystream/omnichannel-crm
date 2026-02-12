@@ -10,6 +10,7 @@ import { BaseChannelAdapter, AdapterConfig, OutboundMessage, DeliveryResult } fr
 import { Channel, NormalizedMessage, MessageDirection } from '../models';
 import { Logger } from '../utils/Logger';
 import { EventBus } from '../core/EventBus';
+import { getPool } from '../utils/database';
 
 export interface WebChatConfig extends AdapterConfig {
   widgetOrigins: string[];
@@ -219,8 +220,8 @@ export class WebChatAdapter extends BaseChannelAdapter {
       session.messageCount++;
       session.isTyping = false;
 
-      // Emit webhook event for processing
-      await this.emitWebhookEvent(normalizedMessage);
+      // Store message in database and emit events
+      await this.processIncomingMessage(session, normalizedMessage, data.content);
 
       // Acknowledge receipt
       socket.emit('chat:message:ack', {
@@ -503,6 +504,104 @@ export class WebChatAdapter extends BaseChannelAdapter {
     const socket = this.io?.sockets.sockets.get(agentSocketId);
     socket?.join(`conversation:${conversationId}`);
   }
-}
 
-export default WebChatAdapter;
+  /**
+   * Process incoming webchat message - create customer, conversation, message
+   */
+  private async processIncomingMessage(
+    session: any,
+    normalizedMessage: NormalizedMessage,
+    content: string
+  ): Promise<void> {
+    try {
+      const pool = getPool();
+      const email = session.customerIdentity.email || null;
+      const name = session.customerIdentity.name || 'Web Visitor';
+
+      // 1. Find or create customer
+      let customer = null;
+      if (email) {
+        const result = await pool.query('SELECT * FROM customers WHERE email = $1', [email]);
+        if (result.rows.length > 0) customer = result.rows[0];
+      }
+
+      if (!customer) {
+        const result = await pool.query(
+          `INSERT INTO customers (email, name, created_at, updated_at)
+           VALUES ($1, $2, NOW(), NOW())
+           RETURNING *`,
+          [email, name]
+        );
+        customer = result.rows[0];
+        this.logActivity('Created new customer', { customerId: customer.id });
+      }
+
+      // 2. Find or create conversation (link to session if not already linked)
+      let conversation = null;
+      if (session.conversationId) {
+        const result = await pool.query('SELECT * FROM conversations WHERE id = $1', [session.conversationId]);
+        if (result.rows.length > 0) conversation = result.rows[0];
+      }
+
+      if (!conversation) {
+        // Find open conversation for this customer on webchat
+        const result = await pool.query(
+          `SELECT * FROM conversations
+           WHERE customer_id = $1 AND channel = 'webchat' AND status IN ('open', 'pending')
+           ORDER BY updated_at DESC LIMIT 1`,
+          [customer.id]
+        );
+
+        if (result.rows.length > 0) {
+          conversation = result.rows[0];
+        } else {
+          // Create new conversation
+          const newConv = await pool.query(
+            `INSERT INTO conversations (customer_id, channel, status, subject, priority, created_at, updated_at)
+             VALUES ($1, 'webchat', 'open', 'Web Chat', 'normal', NOW(), NOW())
+             RETURNING *`,
+            [customer.id]
+          );
+          conversation = newConv.rows[0];
+          this.logActivity('Created new conversation', { conversationId: conversation.id });
+        }
+
+        // Link session to conversation
+        session.conversationId = conversation.id;
+        session.customerId = customer.id;
+      }
+
+      // 3. Create message in database
+      const messageResult = await pool.query(
+        `INSERT INTO messages (conversation_id, content, sender_type, channel, created_at)
+         VALUES ($1, $2, 'customer', 'webchat', NOW())
+         RETURNING id`,
+        [conversation.id, content]
+      );
+
+      // Update conversation timestamp
+      await pool.query(
+        'UPDATE conversations SET updated_at = NOW() WHERE id = $1',
+        [conversation.id]
+      );
+
+      const messageId = messageResult.rows[0].id;
+      this.logActivity('Created message', { conversationId: conversation.id, messageId });
+
+      // 4. Emit message.received event for Socket.IO broadcast and AI processing
+      await this.eventBus.publish('message.received', {
+        messageId: messageId,
+        conversationId: conversation.id,
+        channel: 'webchat',
+        direction: MessageDirection.INBOUND,
+        senderType: 'customer',
+        customerId: customer.id,
+      });
+
+    } catch (error) {
+      this.logError('Failed to process incoming message', error as Error);
+      throw error;
+    }
+  }
+
+}
