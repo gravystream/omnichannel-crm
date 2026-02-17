@@ -165,12 +165,6 @@ export class WebChatAdapter extends BaseChannelAdapter {
       attachments?: Array<{
         url: string;
         filename: string;
-    // Check if content exists
-    if (!data.content) {
-      socket.emit('chat:error', { message: 'Message content is required' });
-      return;
-    }
-
         contentType: string;
       }>;
     }
