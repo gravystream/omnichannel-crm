@@ -355,4 +355,4 @@ RESPONSE GUIDELINES:
     }
 }
 
-module.exports = AIResponseHandler;
+module.exports = { AIResponseHandler: AIResponseHandler };
