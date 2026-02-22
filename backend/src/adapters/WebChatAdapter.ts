@@ -165,16 +165,15 @@ export class WebChatAdapter extends BaseChannelAdapter {
       attachments?: Array<{
         url: string;
         filename: string;
+      contentType: string;
+    }>;
+    }
+  ): Promise<void> {
     // Check if content exists
     if (!data.content) {
       socket.emit('chat:error', { message: 'Message content is required' });
       return;
     }
-
-        contentType: string;
-      }>;
-    }
-  ): Promise<void> {
     const sessionId = this.socketToSession.get(socket.id);
     if (!sessionId) {
       socket.emit('chat:error', { message: 'Session not initialized' });

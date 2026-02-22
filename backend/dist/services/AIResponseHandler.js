@@ -90,21 +90,18 @@ class AIResponseHandler {
 
             // Save AI response to database
             var insertRes = await this.pool.query(
-                "INSERT INTO messages (conversation_id, content, sender_type, content_type, created_at) VALUES ($1, $2, 'agent', 'text', NOW()) RETURNING id",
+                "INSERT INTO messages (conversation_id, content, sender_type, created_at) VALUES ($1, $2, 'agent', NOW()) RETURNING id",
                 [conversationId, aiResponse]
             );
             var newMessageId = insertRes.rows[0].id;
 
             // Publish message.sent event
             this.eventBus.publish('message.sent', {
-                payload: {
                     id: newMessageId,
                     conversationId: conversationId,
                     conversation_id: conversationId,
                     content: aiResponse,
                     sender_type: 'agent',
-                    content_type: 'text'
-                }
             });
 
             this.logger.info('AI Response sent successfully', { conversationId: conversationId });
@@ -113,18 +110,15 @@ class AIResponseHandler {
             // Send fallback message
             var fallback = "I apologize for the inconvenience. Let me connect you with a team member who can assist you right away. Please hold on.";
             var fallbackRes = await this.pool.query(
-                "INSERT INTO messages (conversation_id, content, sender_type, content_type, created_at) VALUES ($1, $2, 'agent', 'text', NOW()) RETURNING id",
+                "INSERT INTO messages (conversation_id, content, sender_type, created_at) VALUES ($1, $2, 'agent', NOW()) RETURNING id",
                 [conversationId, fallback]
             );
             this.eventBus.publish('message.sent', {
-                payload: {
                     id: fallbackRes.rows[0].id,
                     conversationId: conversationId,
                     conversation_id: conversationId,
                     content: fallback,
                     sender_type: 'agent',
-                    content_type: 'text'
-                }
             });
         }
     }
@@ -299,10 +293,8 @@ RESPONSE GUIDELINES:
 
             // Publish escalation event
             this.eventBus.publish('conversation.escalated', {
-                payload: {
                     conversationId: conversationId,
                     reason: 'Customer complaint - details collected'
-                }
             });
         } catch (error) {
             this.logger.error('Escalation error: ' + error.message);
@@ -355,4 +347,4 @@ RESPONSE GUIDELINES:
     }
 }
 
-module.exports = AIResponseHandler;
+module.exports = { AIResponseHandler: AIResponseHandler };

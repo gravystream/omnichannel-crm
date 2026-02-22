@@ -1,5 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
+import { getPool } from '../../utils/database';
+import bcrypt from 'bcryptjs';
 
 const router = Router();
 
@@ -10,6 +12,7 @@ const designations = new Map<string, any>();
 
 // Initialize default roles
 const defaultRoles = [
+  { id: 'role-owner', name: 'Owner', description: 'System owner with unrestricted access', permissions: ['all'], color: '#f59e0b' },
   { id: 'role-admin', name: 'Administrator', description: 'Full system access', permissions: ['all'], color: '#dc2626' },
   { id: 'role-supervisor', name: 'Supervisor', description: 'Team management and reporting', permissions: ['view_dashboard', 'manage_agents', 'view_reports', 'manage_conversations', 'view_customers'], color: '#7c3aed' },
   { id: 'role-senior-agent', name: 'Senior Agent', description: 'Handle complex issues and mentor juniors', permissions: ['view_dashboard', 'manage_conversations', 'view_customers', 'use_ai', 'escalate'], color: '#2563eb' },
@@ -87,8 +90,9 @@ router.get('/:id', (req: Request, res: Response) => {
 });
 
 // Create agent
-router.post('/', (req: Request, res: Response) => {
-  const { name, email, phone, roleId, designationId, department, skills, maxChats } = req.body;
+router.post('/', async (req: Request, res: Response) => {
+  const { name, email, phone, roleId, designationId, department, skills, maxChats, password } = req.body;
+  const rawPassword = password || ("Agent" + Math.random().toString(36).slice(-6));
   
   if (!name || !email || !roleId) {
     return res.status(400).json({ error: 'Name, email, and role are required' });
@@ -110,11 +114,25 @@ router.post('/', (req: Request, res: Response) => {
     maxChats: maxChats || 5
   };
   
+  try {
+    const pool = getPool();
+    const hashedPassword = await bcrypt.hash(rawPassword, 10);
+    const nameParts = (name || '').split(' ');
+    const firstName = nameParts[0] || '';
+    const lastName = nameParts.slice(1).join(' ') || '';
+    await pool.query('INSERT INTO users (id, email, password, first_name, last_name, role, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW()) ON CONFLICT (email) DO UPDATE SET first_name = $4, last_name = $5, updated_at = NOW()', [id, email, hashedPassword, firstName, lastName, 'agent']);
+    await pool.query('INSERT INTO agents (id, name, email, status, current_chats, max_chats, created_at) VALUES ($1, $2, $3, $4, 0, $5, NOW()) ON CONFLICT (id) DO NOTHING', [id, name, email, 'available', maxChats || 5]);
+    console.log('[Agents] Created agent and user record for:', email);
+  } catch (err: any) {
+    console.error('[Agents] Error persisting agent:', err.message);
+    return res.status(500).json({ error: 'Failed to create agent: ' + err.message });
+  }
   agents.set(id, agent);
   res.status(201).json({
     ...agent,
     role: roles.get(agent.roleId),
-    designation: designations.get(agent.designationId)
+    designation: designations.get(agent.designationId),
+    generatedPassword: rawPassword
   });
 });
 
@@ -135,7 +153,7 @@ router.put('/:id', (req: Request, res: Response) => {
 });
 
 // Delete agent
-router.delete('/:id', (req: Request, res: Response) => {
+router.delete('/:id', async (req: Request, res: Response) => {
   if (!agents.has(req.params.id)) {
     return res.status(404).json({ error: 'Agent not found' });
   }
