@@ -14,6 +14,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.78.0",
     "@types/pg": "^8.16.0",
     "bcryptjs": "^2.4.3",
     "compression": "^1.7.4",
@@ -24,6 +25,7 @@
     "helmet": "^7.1.0",
     "jsonwebtoken": "^9.0.2",
     "morgan": "^1.10.0",
+    "multer": "^2.0.2",
     "nodemailer": "^8.0.0",
     "pg": "^8.17.2",
     "socket.io": "^4.7.2",
